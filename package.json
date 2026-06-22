@@ -1,0 +1,20 @@
+{
+  "name": "opencode-artifacts-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "bun test src",
+    "build:companion": "cd companion && bun install && bun run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.17.9",
+    "@opencode-ai/sdk": "^1.17.9"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/bun": "latest"
+  }
+}

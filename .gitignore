@@ -1,0 +1,5 @@
+node_modules/
+companion/node_modules/
+companion/dist/
+.opencode/artifacts/
+*.log
