@@ -17,6 +17,19 @@ test("wraps each anchored comment's quote in a mark.anchor-highlight", async () 
   })
 })
 
+test("highlights two distinct anchored comments independently", async () => {
+  const two: Comment[] = [
+    { id: "a", revision: 1, kind: "anchor", anchor: { quote: "step one", prefix: "", suffix: "" }, body: "expand one", resolved: false, createdAt: 0 },
+    { id: "b", revision: 1, kind: "anchor", anchor: { quote: "step two", prefix: "", suffix: "" }, body: "expand two", resolved: false, createdAt: 0 },
+  ]
+  render(<ArtifactView content={"# Plan\n\nstep one here, then step two done"} comments={two} onAnchor={() => {}} />)
+  await waitFor(() => {
+    const marks = [...document.querySelectorAll("mark.anchor-highlight")]
+    expect(marks.map((m) => m.textContent).sort()).toEqual(["step one", "step two"])
+    expect(marks.map((m) => m.getAttribute("title")).sort()).toEqual(["expand one", "expand two"])
+  })
+})
+
 test("orphaned anchors (quote not present) are skipped", async () => {
   const orphan: Comment[] = [
     { id: "c2", revision: 1, kind: "anchor", anchor: { quote: "not in doc", prefix: "", suffix: "" }, body: "x", resolved: false, createdAt: 0 },
