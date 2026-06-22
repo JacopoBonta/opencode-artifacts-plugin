@@ -1,5 +1,5 @@
 import { test, expect, vi, afterEach } from "vitest"
-import { listArtifacts, getArtifact, postComment, postVerdict } from "./api"
+import { listArtifacts, getArtifact, postComment, postVerdict, getRevision } from "./api"
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -21,4 +21,12 @@ test("postVerdict POSTs status to verdict endpoint", async () => {
   )
   const body = JSON.parse(fetchMock.mock.calls[0][1].body)
   expect(body.status).toBe("approved")
+})
+
+test("getRevision GETs the revision endpoint", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ json: async () => ({ content: "# rev 2" }) })
+  vi.stubGlobal("fetch", fetchMock)
+  const out = await getRevision("id1", 2)
+  expect(fetchMock).toHaveBeenCalledWith("/api/artifacts/id1/revisions/2")
+  expect(out).toEqual({ content: "# rev 2" })
 })

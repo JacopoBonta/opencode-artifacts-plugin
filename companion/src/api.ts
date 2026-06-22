@@ -21,6 +21,9 @@ export async function listArtifacts(): Promise<Artifact[]> {
 export async function getArtifact(id: string): Promise<ArtifactDetail> {
   return (await fetch(`/api/artifacts/${id}`)).json()
 }
+export async function getRevision(id: string, n: number): Promise<{ content: string }> {
+  return (await fetch(`/api/artifacts/${id}/revisions/${n}`)).json()
+}
 export async function postComment(
   id: string,
   c: { revision: number; kind: "anchor" | "general"; anchor?: Anchor; body: string },

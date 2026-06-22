@@ -35,3 +35,15 @@ test("adding a comment calls onAdd with trimmed text", async () => {
   await userEvent.click(screen.getByRole("button", { name: /^comment$/i }))
   expect(onAdd).toHaveBeenCalledWith("hello")
 })
+
+test("readOnly hides the input and lists all comments flat", () => {
+  const mixed: Comment[] = [
+    { id: "a", revision: 1, kind: "general", body: "one", resolved: false, createdAt: 0 },
+    { id: "b", revision: 1, kind: "general", body: "two", resolved: true, createdAt: 0 },
+  ]
+  render(<CommentThread comments={mixed} onAdd={() => {}} readOnly />)
+  expect(screen.getByText("one")).toBeInTheDocument()
+  expect(screen.getByText("two")).toBeInTheDocument()
+  expect(screen.queryByPlaceholderText("Add a comment")).toBeNull()
+  expect(screen.queryByRole("button", { name: /resolved \(/i })).toBeNull()
+})

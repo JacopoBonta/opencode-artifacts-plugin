@@ -57,3 +57,15 @@ test("resolved anchored comments are NOT highlighted", async () => {
   await new Promise((r) => setTimeout(r, 20))
   expect(document.querySelectorAll("mark.anchor-highlight").length).toBe(0)
 })
+
+test("with highlightResolved, a resolved anchored comment IS highlighted", async () => {
+  const resolved: Comment[] = [
+    { id: "r2", revision: 1, kind: "anchor", anchor: { quote: "step one", prefix: "", suffix: "" }, body: "historical note", resolved: true, createdAt: 0 },
+  ]
+  render(<ArtifactView content={"# Plan\n\nstep one here"} comments={resolved} onAnchor={() => {}} highlightResolved />)
+  await waitFor(() => {
+    const marks = document.querySelectorAll("mark.anchor-highlight")
+    expect(marks.length).toBe(1)
+    expect(marks[0].textContent).toBe("step one")
+  })
+})

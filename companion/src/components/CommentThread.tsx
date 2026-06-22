@@ -14,9 +14,20 @@ export function CommentThread(props: {
   comments: Comment[]
   onAdd: (body: string) => void
   title?: string
+  readOnly?: boolean
 }) {
   const [draft, setDraft] = useState("")
   const [showResolved, setShowResolved] = useState(false)
+
+  if (props.readOnly) {
+    return (
+      <div className="comment-thread">
+        {props.title && <h4>{props.title}</h4>}
+        {props.comments.length === 0 && <p className="empty">No comments on this revision.</p>}
+        {props.comments.map((c) => <CommentItem key={c.id} c={c} />)}
+      </div>
+    )
+  }
 
   const active = props.comments.filter((c) => !c.resolved)
   const resolved = props.comments.filter((c) => c.resolved)
