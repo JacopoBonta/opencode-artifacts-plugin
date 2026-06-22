@@ -1,0 +1,77 @@
+import { test, expect, afterEach } from "bun:test"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { createStore } from "./store"
+import { createBroadcaster } from "./events"
+import { createServer } from "./server"
+
+let stop: (() => void) | null = null
+afterEach(() => { stop?.(); stop = null })
+
+function setup() {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  const store = createStore({ root: dir, clock: () => 1, idgen: (() => { let n = 0; return () => `id${++n}` })() })
+  const events = createBroadcaster()
+  const refine = { called: [] as any[] }
+  const srv = createServer({
+    store, events, port: 0, staticDir: null,
+    onRefine: (id, comments) => { refine.called.push({ id, comments }) },
+  })
+  stop = srv.stop
+  return { store, events, srv, refine }
+}
+
+test("GET /api/artifacts lists artifacts", async () => {
+  const { store, srv } = setup()
+  await store.publish({ type: "plan", title: "P", content: "x" })
+  const res = await fetch(`${srv.url}/api/artifacts`)
+  const body = await res.json()
+  expect(body).toHaveLength(1)
+  expect(body[0].title).toBe("P")
+})
+
+test("GET /api/artifacts/:id returns meta, content, comments", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "# Hello" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}`)
+  const body = await res.json()
+  expect(body.artifact.title).toBe("P")
+  expect(body.content).toBe("# Hello")
+  expect(body.comments).toEqual([])
+})
+
+test("POST comment then verdict resolves a pending plan", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const pending = store.awaitVerdict(artifact.id)
+
+  await fetch(`${srv.url}/api/artifacts/${artifact.id}/comments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ revision: 1, kind: "general", body: "tweak" }),
+  })
+  await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "changes_requested" }),
+  })
+
+  const verdict = await pending
+  expect(verdict.status).toBe("changes_requested")
+  if (verdict.status === "changes_requested") {
+    expect(verdict.comments[0].body).toBe("tweak")
+  }
+})
+
+test("POST verdict {refine} on a report triggers onRefine", async () => {
+  const { store, srv, refine } = setup()
+  const { artifact } = await store.publish({ type: "report", title: "R", content: "done" })
+  await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "refine" }),
+  })
+  expect(refine.called).toHaveLength(1)
+  expect(refine.called[0].id).toBe(artifact.id)
+})
