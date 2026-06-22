@@ -34,6 +34,13 @@ test("publish with existing id adds a revision", async () => {
   expect(await store.readRevision(artifact.id, 2)).toBe("v2")
 })
 
+test("publish with an unknown artifactId throws (no silent reset)", async () => {
+  const store = newStore()
+  await expect(
+    store.publish({ type: "plan", title: "P", content: "x", artifactId: "does-not-exist" }),
+  ).rejects.toThrow("unknown artifactId")
+})
+
 test("addComment persists and is retrievable", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })

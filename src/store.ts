@@ -47,33 +47,48 @@ export function createStore(opts: StoreOptions) {
 
   async function publish(input: PublishInput): Promise<{ artifact: Artifact }> {
     const now = clock()
-    let a: Artifact
-    if (input.artifactId && artifacts.has(input.artifactId)) {
-      a = artifacts.get(input.artifactId)!
-      a.currentRevision += 1
-      a.title = input.title
-      a.status = input.type === "plan" ? "awaiting_review" : "published"
-      a.updatedAt = now
+    const status = input.type === "plan" ? "awaiting_review" : "published"
+
+    // Build the next artifact state without mutating the live reference, so a
+    // failed write leaves in-memory state untouched (commit only after I/O).
+    let next: Artifact
+    const isNew = !input.artifactId
+    if (input.artifactId) {
+      const existing = artifacts.get(input.artifactId)
+      if (!existing) {
+        throw new Error(`unknown artifactId: ${input.artifactId}`)
+      }
+      next = {
+        ...existing,
+        currentRevision: existing.currentRevision + 1,
+        title: input.title,
+        status,
+        updatedAt: now,
+      }
     } else {
-      const id = input.artifactId ?? idgen()
-      a = {
-        id,
+      next = {
+        id: idgen(),
         type: input.type,
         title: input.title,
-        status: input.type === "plan" ? "awaiting_review" : "published",
+        status,
         currentRevision: 1,
         createdAt: now,
         updatedAt: now,
         sessionID: input.sessionID,
       }
-      artifacts.set(id, a)
-      comments.set(id, [])
     }
-    await mkdir(join(artDir(a.id), "revisions"), { recursive: true })
-    await writeFile(revPath(a.id, a.currentRevision), input.content)
-    await persistMeta(a)
-    if (!existsSync(commentsPath(a.id))) await persistComments(a.id)
-    return { artifact: { ...a } }
+
+    await mkdir(join(artDir(next.id), "revisions"), { recursive: true })
+    await writeFile(revPath(next.id, next.currentRevision), input.content)
+    await writeFile(metaPath(next.id), JSON.stringify(next, null, 2))
+    if (isNew && !existsSync(commentsPath(next.id))) {
+      await writeFile(commentsPath(next.id), JSON.stringify([], null, 2))
+    }
+
+    // Commit to in-memory state only after all writes succeeded.
+    artifacts.set(next.id, next)
+    if (isNew) comments.set(next.id, [])
+    return { artifact: { ...next } }
   }
 
   async function readRevision(id: string, rev: number): Promise<string> {
@@ -93,7 +108,8 @@ export function createStore(opts: StoreOptions) {
   }
 
   async function getComments(id: string): Promise<Comment[]> {
-    return [...(comments.get(id) ?? [])]
+    // Deep-ish copy so callers can't mutate stored Comment objects in place.
+    return (comments.get(id) ?? []).map((c) => ({ ...c }))
   }
 
   function awaitVerdict(id: string): Promise<Verdict> {
@@ -135,10 +151,16 @@ export function createStore(opts: StoreOptions) {
     for (const id of await readdir(root)) {
       const mp = metaPath(id)
       if (!existsSync(mp)) continue
-      const a: Artifact = JSON.parse(await readFile(mp, "utf8"))
-      artifacts.set(id, a)
-      const cp = commentsPath(id)
-      comments.set(id, existsSync(cp) ? JSON.parse(await readFile(cp, "utf8")) : [])
+      // Skip individually corrupt entries rather than aborting the whole load.
+      try {
+        const a: Artifact = JSON.parse(await readFile(mp, "utf8"))
+        const cp = commentsPath(id)
+        const c: Comment[] = existsSync(cp) ? JSON.parse(await readFile(cp, "utf8")) : []
+        artifacts.set(id, a)
+        comments.set(id, c)
+      } catch {
+        // ignore unreadable/corrupt artifact directory
+      }
     }
   }
 
