@@ -30,6 +30,7 @@ export function ArtifactView(props: {
   content: string
   comments: Comment[]
   onAnchor: (anchor: Anchor) => void
+  highlightResolved?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -58,12 +59,13 @@ export function ArtifactView(props: {
     // Apply highlights for each anchored comment
     const text = ref.current.textContent ?? ""
     for (const comment of props.comments) {
-      if (comment.kind !== "anchor" || !comment.anchor || comment.resolved) continue
+      if (comment.kind !== "anchor" || !comment.anchor) continue
+      if (comment.resolved && !props.highlightResolved) continue
       const offsets = findAnchorOffsets(text, comment.anchor)
       if (!offsets) continue
       wrapRange(ref.current, offsets.start, offsets.end, comment.body)
     }
-  }, [props.content, props.comments])
+  }, [props.content, props.comments, props.highlightResolved])
 
   return (
     <div className="artifact-view" ref={ref} onMouseUp={onMouseUp}>
