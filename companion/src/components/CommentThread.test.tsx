@@ -1,5 +1,5 @@
 import { test, expect, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { CommentThread } from "./CommentThread"
 import type { Comment } from "../api"
@@ -46,4 +46,29 @@ test("readOnly hides the input and lists all comments flat", () => {
   expect(screen.getByText("two")).toBeInTheDocument()
   expect(screen.queryByPlaceholderText("Add a comment")).toBeNull()
   expect(screen.queryByRole("button", { name: /resolved \(/i })).toBeNull()
+})
+
+test("clicking an anchored comment fires onCommentClick; general comments are not clickable", async () => {
+  const onCommentClick = vi.fn()
+  const items: Comment[] = [
+    { id: "x", revision: 1, kind: "anchor", anchor: { quote: "q", prefix: "", suffix: "" }, body: "anchored body", resolved: false, createdAt: 0 },
+    { id: "y", revision: 1, kind: "general", body: "general body", resolved: false, createdAt: 0 },
+  ]
+  render(<CommentThread comments={items} onAdd={() => {}} onCommentClick={onCommentClick} />)
+  await userEvent.click(screen.getByText("anchored body"))
+  expect(onCommentClick).toHaveBeenCalledWith("x")
+  onCommentClick.mockClear()
+  await userEvent.click(screen.getByText("general body"))
+  expect(onCommentClick).not.toHaveBeenCalled()
+})
+
+test("flashCommentId flashes the matching comment item", async () => {
+  const items: Comment[] = [
+    { id: "x", revision: 1, kind: "general", body: "the body", resolved: false, createdAt: 0 },
+  ]
+  const { rerender } = render(<CommentThread comments={items} onAdd={() => {}} />)
+  rerender(<CommentThread comments={items} onAdd={() => {}} flashCommentId="x" flashKey={1} />)
+  await waitFor(() => {
+    expect(document.querySelector('[data-comment-id="x"]')?.classList.contains("flash")).toBe(true)
+  })
 })
