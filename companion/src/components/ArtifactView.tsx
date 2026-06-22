@@ -2,8 +2,9 @@ import React, { useRef, useEffect } from "react"
 import Markdown from "react-markdown"
 import type { Anchor, Comment } from "../api"
 import { anchorFromOffsets, selectionOffsets, findAnchorOffsets } from "../anchor-dom"
+import { flashElement } from "../flash"
 
-function wrapRange(container: HTMLElement, start: number, end: number, title: string) {
+function wrapRange(container: HTMLElement, start: number, end: number, title: string, commentId: string) {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
   let pos = 0
   const slices: { node: Text; from: number; to: number }[] = []
@@ -22,6 +23,7 @@ function wrapRange(container: HTMLElement, start: number, end: number, title: st
     const mark = document.createElement("mark")
     mark.className = "anchor-highlight"
     mark.title = title
+    mark.dataset.commentId = commentId
     range.surroundContents(mark)
   }
 }
@@ -31,6 +33,9 @@ export function ArtifactView(props: {
   comments: Comment[]
   onAnchor: (anchor: Anchor) => void
   highlightResolved?: boolean
+  onHighlightClick?: (commentId: string) => void
+  flashAnchorId?: string
+  flashKey?: number
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -41,6 +46,12 @@ export function ArtifactView(props: {
     if (!offsets || offsets.end <= offsets.start) return
     const text = ref.current.textContent ?? ""
     props.onAnchor(anchorFromOffsets(text, offsets.start, offsets.end))
+  }
+
+  function onClick(e: React.MouseEvent) {
+    const mark = (e.target as HTMLElement).closest("mark.anchor-highlight") as HTMLElement | null
+    const id = mark?.dataset.commentId
+    if (id) props.onHighlightClick?.(id)
   }
 
   useEffect(() => {
@@ -63,12 +74,19 @@ export function ArtifactView(props: {
       if (comment.resolved && !props.highlightResolved) continue
       const offsets = findAnchorOffsets(text, comment.anchor)
       if (!offsets) continue
-      wrapRange(ref.current, offsets.start, offsets.end, comment.body)
+      wrapRange(ref.current, offsets.start, offsets.end, comment.body, comment.id)
     }
   }, [props.content, props.comments, props.highlightResolved])
 
+  useEffect(() => {
+    if (!ref.current || !props.flashAnchorId) return
+    ref.current
+      .querySelectorAll<HTMLElement>(`mark.anchor-highlight[data-comment-id="${CSS.escape(props.flashAnchorId)}"]`)
+      .forEach((m) => flashElement(m))
+  }, [props.flashAnchorId, props.flashKey])
+
   return (
-    <div className="artifact-view" ref={ref} onMouseUp={onMouseUp}>
+    <div className="artifact-view" ref={ref} onMouseUp={onMouseUp} onClick={onClick}>
       <Markdown>{props.content}</Markdown>
     </div>
   )
