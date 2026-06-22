@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react"
+import React, { useEffect, useState, useCallback, useRef } from "react"
 import "./App.css"
 import * as api from "./api"
 import type { Anchor, Artifact, ArtifactDetail } from "./api"
@@ -17,6 +17,11 @@ export function App() {
   // undefined = viewing the latest revision
   const [viewedRevision, setViewedRevision] = useState<number>()
   const [historicalContent, setHistoricalContent] = useState<string>()
+  const flashSeq = useRef(0)
+  const [flashComment, setFlashComment] = useState<{ id: string; key: number }>()
+  const [flashAnchor, setFlashAnchor] = useState<{ id: string; key: number }>()
+  const onHighlightClick = useCallback((id: string) => setFlashComment({ id, key: ++flashSeq.current }), [])
+  const onCommentClick = useCallback((id: string) => setFlashAnchor({ id, key: ++flashSeq.current }), [])
 
   const refreshList = useCallback(async () => setArtifacts(await api.listArtifacts()), [])
   const refreshDetail = useCallback(async (id: string) => setDetail(await api.getArtifact(id)), [])
@@ -122,6 +127,9 @@ export function App() {
               comments={revisionComments}
               highlightResolved={!isLatest}
               onAnchor={isLatest ? setPendingAnchor : () => {}}
+              onHighlightClick={onHighlightClick}
+              flashAnchorId={flashAnchor?.id}
+              flashKey={flashAnchor?.key}
             />
           </>
         ) : (
@@ -142,6 +150,9 @@ export function App() {
                   title="Comments"
                   comments={detail.comments}
                   onAdd={(body) => addComment(body, pendingAnchor)}
+                  onCommentClick={onCommentClick}
+                  flashCommentId={flashComment?.id}
+                  flashKey={flashComment?.key}
                 />
                 <ActionBar
                   type={detail.artifact.type}
@@ -156,6 +167,9 @@ export function App() {
                 comments={revisionComments}
                 onAdd={() => {}}
                 readOnly
+                onCommentClick={onCommentClick}
+                flashCommentId={flashComment?.id}
+                flashKey={flashComment?.key}
               />
             )}
           </>

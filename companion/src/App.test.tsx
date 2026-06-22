@@ -1,5 +1,5 @@
 import { test, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, waitFor, act } from "@testing-library/react"
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import * as api from "./api"
 import { App } from "./App"
@@ -80,4 +80,23 @@ test("switching to an older revision shows read-only history; back to latest res
   await userEvent.click(screen.getByRole("button", { name: /back to latest/i }))
   await waitFor(() => screen.getByRole("heading", { name: "Rev Two Latest" }))
   expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument()
+})
+
+test("clicking a highlight in the document flashes its comment in the rail", async () => {
+  vi.mocked(api.getArtifact).mockResolvedValue({
+    artifact: { id: "id1", type: "plan", title: "P", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 0 },
+    content: "# Plan\n\nstep one here",
+    comments: [{ id: "c1", revision: 1, kind: "anchor", anchor: { quote: "step one", prefix: "", suffix: "" }, body: "fix this", resolved: false, createdAt: 0 }],
+  })
+  render(<App />)
+  let mark: Element | null = null
+  await waitFor(() => {
+    mark = document.querySelector("mark.anchor-highlight")
+    expect(mark).not.toBeNull()
+  })
+  fireEvent.click(mark!)
+  await waitFor(() => {
+    const comment = document.querySelector('.comment[data-comment-id="c1"]')
+    expect(comment?.classList.contains("flash")).toBe(true)
+  })
 })
