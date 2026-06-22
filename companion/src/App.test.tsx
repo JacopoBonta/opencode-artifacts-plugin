@@ -13,6 +13,7 @@ beforeEach(() => {
     artifact: { id: "id1", type: "plan", title: "P", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 0 },
     content: "# Plan\n\nstep one", comments: [],
   })
+  vi.spyOn(api, "getRevision").mockResolvedValue({ content: "" })
 })
 
 afterEach(() => vi.restoreAllMocks())
@@ -53,4 +54,30 @@ test("clicking another artifact in the list selects it", async () => {
   await waitFor(() => screen.getByRole("heading", { name: "First Body" }))
   await userEvent.click(screen.getByText("Second"))
   await waitFor(() => screen.getByRole("heading", { name: "Second Body" }))
+})
+
+test("switching to an older revision shows read-only history; back to latest restores actions", async () => {
+  vi.mocked(api.listArtifacts).mockResolvedValue([
+    { id: "id1", type: "plan", title: "P", status: "awaiting_review", currentRevision: 2, createdAt: 0, updatedAt: 0 },
+  ])
+  vi.mocked(api.getArtifact).mockResolvedValue({
+    artifact: { id: "id1", type: "plan", title: "P", status: "awaiting_review", currentRevision: 2, createdAt: 0, updatedAt: 0 },
+    content: "# Rev Two Latest",
+    comments: [{ id: "c1", revision: 1, kind: "general", body: "old feedback", resolved: true, createdAt: 0 }],
+  })
+  vi.mocked(api.getRevision).mockResolvedValue({ content: "# Rev One Old" })
+
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "Rev Two Latest" }))
+  expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument()
+
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: /revision/i }), "1")
+  await waitFor(() => screen.getByRole("heading", { name: "Rev One Old" }))
+  expect(screen.getByText(/historical/i)).toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: /approve/i })).toBeNull()
+  expect(screen.getByText("old feedback")).toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole("button", { name: /back to latest/i }))
+  await waitFor(() => screen.getByRole("heading", { name: "Rev Two Latest" }))
+  expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument()
 })

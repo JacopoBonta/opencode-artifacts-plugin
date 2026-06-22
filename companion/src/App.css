@@ -27,3 +27,7 @@ mark.anchor-highlight { background: #fde68a; border-radius: 2px; cursor: help; }
 .comment.resolved { opacity: 0.6; }
 .resolved-section { margin: 4px 0 8px; }
 .resolved-toggle { background: none; border: none; padding: 4px 0; color: #71717a; font-size: 12px; cursor: pointer; }
+.main-header-right { display: flex; align-items: center; gap: 10px; }
+.revision-switcher { font-size: 12px; padding: 2px 4px; }
+.historical-banner { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 6px 10px; border-radius: 6px; background: #eff6ff; color: #1e40af; font-size: 13px; }
+.historical-banner button { background: none; border: none; color: #1d4ed8; text-decoration: underline; cursor: pointer; font-size: 13px; }
