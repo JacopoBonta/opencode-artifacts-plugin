@@ -40,6 +40,6 @@ export type Verdict =
   | { status: "approved" }
   | { status: "changes_requested"; comments: Comment[] }
 
-export function isPlan(a: Pick<Artifact, "type">): boolean {
+export function isPlan(a: Pick<Artifact, "type">): a is { type: "plan" } {
   return a.type === "plan"
 }
