@@ -58,7 +58,7 @@ export function ArtifactView(props: {
     // Apply highlights for each anchored comment
     const text = ref.current.textContent ?? ""
     for (const comment of props.comments) {
-      if (comment.kind !== "anchor" || !comment.anchor) continue
+      if (comment.kind !== "anchor" || !comment.anchor || comment.resolved) continue
       const offsets = findAnchorOffsets(text, comment.anchor)
       if (!offsets) continue
       wrapRange(ref.current, offsets.start, offsets.end, comment.body)

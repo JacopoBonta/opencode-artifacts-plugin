@@ -48,3 +48,12 @@ test("general (non-anchor) comments are not highlighted", async () => {
   await new Promise((r) => setTimeout(r, 20))
   expect(document.querySelectorAll("mark.anchor-highlight").length).toBe(0)
 })
+
+test("resolved anchored comments are NOT highlighted", async () => {
+  const resolved: Comment[] = [
+    { id: "r1", revision: 1, kind: "anchor", anchor: { quote: "step one", prefix: "", suffix: "" }, body: "addressed", resolved: true, createdAt: 0 },
+  ]
+  render(<ArtifactView content={"# Plan\n\nstep one here"} comments={resolved} onAnchor={() => {}} />)
+  await new Promise((r) => setTimeout(r, 20))
+  expect(document.querySelectorAll("mark.anchor-highlight").length).toBe(0)
+})
