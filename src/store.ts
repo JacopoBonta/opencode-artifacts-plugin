@@ -84,6 +84,14 @@ export function createStore(opts: StoreOptions) {
     await mkdir(join(artDir(next.id), "revisions"), { recursive: true })
     await writeFile(revPath(next.id, next.currentRevision), input.content)
     await writeFile(metaPath(next.id), JSON.stringify(next, null, 2))
+
+    // On a revision bump, all prior comments are assumed addressed by the new
+    // revision — mark them resolved (build a copy, write, commit after I/O).
+    let resolvedComments: Comment[] | undefined
+    if (!isNew) {
+      resolvedComments = (comments.get(next.id) ?? []).map((c) => ({ ...c, resolved: true }))
+      await writeFile(commentsPath(next.id), JSON.stringify(resolvedComments, null, 2))
+    }
     if (isNew && !existsSync(commentsPath(next.id))) {
       await writeFile(commentsPath(next.id), JSON.stringify([], null, 2))
     }
@@ -91,6 +99,7 @@ export function createStore(opts: StoreOptions) {
     // Commit to in-memory state only after all writes succeeded.
     artifacts.set(next.id, next)
     if (isNew) comments.set(next.id, [])
+    else if (resolvedComments) comments.set(next.id, resolvedComments)
     return { artifact: { ...next } }
   }
 

@@ -60,6 +60,25 @@ test("addComment to an unknown artifact throws", async () => {
   ).rejects.toThrow("unknown artifact")
 })
 
+test("re-publishing a revision auto-resolves all prior comments", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })
+  await store.addComment(artifact.id, { revision: 1, kind: "general", body: "fix intro" })
+  await store.addComment(artifact.id, { revision: 1, kind: "anchor", anchor: { quote: "x", prefix: "", suffix: "" }, body: "tighten" })
+
+  await store.publish({ type: "plan", title: "P", content: "v2", artifactId: artifact.id })
+
+  const comments = await store.getComments(artifact.id)
+  expect(comments).toHaveLength(2)
+  expect(comments.every((c) => c.resolved)).toBe(true)
+})
+
+test("a brand-new artifact's first publish leaves its (empty) comments untouched", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })
+  expect(await store.getComments(artifact.id)).toHaveLength(0)
+})
+
 test("re-publish derives status from the existing artifact type, not the passed type", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "report", title: "R", content: "v1" })

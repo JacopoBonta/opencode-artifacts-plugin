@@ -121,3 +121,30 @@ test("GET unknown revision returns 404, malformed verdict JSON returns 400", asy
   })
   expect(r400.status).toBe(400)
 })
+
+test("after a revise, changes_requested returns only the new revision's unresolved comments", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })
+  const id = artifact.id
+  // comment on v1, then the agent revises (republish) — v1 comments auto-resolve
+  await store.addComment(id, { revision: 1, kind: "general", body: "old v1 note" })
+  await store.publish({ type: "plan", title: "P", content: "v2", artifactId: id })
+
+  // user reviews v2 and leaves a fresh comment, then requests changes
+  const pending = store.awaitVerdict(id)
+  await fetch(`${srv.url}/api/artifacts/${id}/comments`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ revision: 2, kind: "general", body: "new v2 note" }),
+  })
+  await fetch(`${srv.url}/api/artifacts/${id}/verdict`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "changes_requested" }),
+  })
+
+  const verdict = await pending
+  expect(verdict.status).toBe("changes_requested")
+  if (verdict.status === "changes_requested") {
+    expect(verdict.comments).toHaveLength(1)
+    expect(verdict.comments[0].body).toBe("new v2 note")
+  }
+})
