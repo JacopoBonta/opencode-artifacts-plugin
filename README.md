@@ -27,6 +27,6 @@ Environment: set `OPENCODE_ARTIFACTS_PORT` to pin the companion port.
 
 ## Development
 
-- Backend tests: `bun test src`
-- Companion tests: `cd companion && bun run test`
+- Backend tests: `bun run test`
+- Companion tests: `bun run test:companion`
 - Typecheck: `bun run typecheck` (and `cd companion && bunx tsc --noEmit -p tsconfig.json`)

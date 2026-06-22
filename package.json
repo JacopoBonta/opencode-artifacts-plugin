@@ -5,7 +5,8 @@
   "main": "src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "scripts": {
-    "test": "bun test src",
+    "test": "bun test src/*.test.ts",
+    "test:companion": "cd companion && bun run test",
     "build:companion": "cd companion && bun install && bun run build",
     "typecheck": "tsc --noEmit"
   },
