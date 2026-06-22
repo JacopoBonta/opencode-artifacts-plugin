@@ -75,3 +75,35 @@ test("POST verdict {refine} on a report triggers onRefine", async () => {
   expect(refine.called).toHaveLength(1)
   expect(refine.called[0].id).toBe(artifact.id)
 })
+
+test("GET /api/events streams an initial ping then broadcast events", async () => {
+  const { events, srv } = setup()
+  const ctrl = new AbortController()
+  const res = await fetch(`${srv.url}/api/events`, { signal: ctrl.signal })
+  const reader = res.body!.getReader()
+  const dec = new TextDecoder()
+
+  const first = dec.decode((await reader.read()).value)
+  expect(first).toContain('"type":"ping"')
+
+  events.broadcast({ type: "artifact.published", id: "z" })
+  const second = dec.decode((await reader.read()).value)
+  expect(second).toContain('"artifact.published"')
+  expect(second).toContain('"z"')
+
+  ctrl.abort()
+  await reader.cancel().catch(() => {})
+})
+
+test("GET unknown revision returns 404, malformed verdict JSON returns 400", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const r404 = await fetch(`${srv.url}/api/artifacts/${artifact.id}/revisions/99`)
+  expect(r404.status).toBe(404)
+  const r400 = await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "not json",
+  })
+  expect(r400.status).toBe(400)
+})

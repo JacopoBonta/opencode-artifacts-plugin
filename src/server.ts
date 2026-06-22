@@ -40,7 +40,10 @@ export function createServer(opts: ServerOptions) {
               controller.enqueue(enc.encode(`data: ${data}\n\n`))
             send(JSON.stringify({ type: "ping" }))
             const unsub = events.subscribe(send)
-            req.signal.addEventListener("abort", () => { unsub(); controller.close() })
+            req.signal.addEventListener("abort", () => {
+              unsub()
+              try { controller.close() } catch { /* already closed */ }
+            })
           },
         })
         return new Response(stream, {
@@ -69,14 +72,19 @@ export function createServer(opts: ServerOptions) {
 
       const revMatch = path.match(/^\/api\/artifacts\/([^/]+)\/revisions\/(\d+)$/)
       if (revMatch && req.method === "GET") {
-        const content = await store.readRevision(revMatch[1], Number(revMatch[2]))
-        return json({ content })
+        try {
+          const content = await store.readRevision(revMatch[1], Number(revMatch[2]))
+          return json({ content })
+        } catch {
+          return json({ error: "revision not found" }, 404)
+        }
       }
 
       const commentMatch = path.match(/^\/api\/artifacts\/([^/]+)\/comments$/)
       if (commentMatch && req.method === "POST") {
         const id = commentMatch[1]
-        const b = await req.json()
+        let b: any
+        try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
         const c = await store.addComment(id, {
           revision: b.revision, kind: b.kind, anchor: b.anchor, body: b.body,
         })
@@ -87,7 +95,8 @@ export function createServer(opts: ServerOptions) {
       const verdictMatch = path.match(/^\/api\/artifacts\/([^/]+)\/verdict$/)
       if (verdictMatch && req.method === "POST") {
         const id = verdictMatch[1]
-        const b = await req.json()
+        let b: any
+        try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
         if (b.status === "refine") {
           const comments = (await store.getComments(id)).filter((c) => !c.resolved)
           opts.onRefine?.(id, comments)
