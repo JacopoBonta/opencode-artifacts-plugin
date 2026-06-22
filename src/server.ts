@@ -30,6 +30,9 @@ export function createServer(opts: ServerOptions) {
 
   const server = Bun.serve({
     port: opts.port ?? 0,
+    // The /api/events SSE stream is intentionally long-lived and mostly idle;
+    // disable Bun's default 10s idle timeout so the connection isn't dropped.
+    idleTimeout: 0,
     async fetch(req) {
       const url = new URL(req.url)
       const path = url.pathname
