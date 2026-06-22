@@ -1,5 +1,5 @@
 import { test, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import * as api from "./api"
 import { App } from "./App"
@@ -24,6 +24,19 @@ test("auto-selects the first artifact on load and approves", async () => {
   await waitFor(() => screen.getByRole("heading", { name: "Plan" }))
   await userEvent.click(screen.getByRole("button", { name: /approve/i }))
   expect(verdict).toHaveBeenCalledWith("id1", "approved")
+})
+
+test("shows a connection-lost banner when the event stream errors", async () => {
+  let errCb: ((e: any) => void) | undefined
+  vi.mocked(api.subscribeEvents).mockImplementation((_onEvent, onError) => {
+    errCb = onError
+    return () => {}
+  })
+  const { findByText } = render(<App />)
+  // trigger the error callback
+  await waitFor(() => expect(errCb).toBeTypeOf("function"))
+  errCb!(new Event("error"))
+  expect(await findByText(/connection lost/i)).toBeInTheDocument()
 })
 
 test("clicking another artifact in the list selects it", async () => {

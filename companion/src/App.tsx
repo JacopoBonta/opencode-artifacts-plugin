@@ -12,6 +12,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string>()
   const [detail, setDetail] = useState<ArtifactDetail>()
   const [pendingAnchor, setPendingAnchor] = useState<Anchor>()
+  const [connected, setConnected] = useState(true)
 
   const refreshList = useCallback(async () => setArtifacts(await api.listArtifacts()), [])
   const refreshDetail = useCallback(async (id: string) => setDetail(await api.getArtifact(id)), [])
@@ -25,11 +26,15 @@ export function App() {
   useEffect(() => { refreshList() }, [refreshList])
 
   useEffect(() => {
-    return api.subscribeEvents((e) => {
-      if (e.type === "ping") return
-      refreshList()
-      if (selectedId && e.id === selectedId) refreshDetail(selectedId)
-    })
+    return api.subscribeEvents(
+      (e) => {
+        setConnected(true)
+        if (e.type === "ping") return
+        refreshList()
+        if (selectedId && e.id === selectedId) refreshDetail(selectedId)
+      },
+      () => setConnected(false),
+    )
   }, [selectedId, refreshList, refreshDetail])
 
   // Auto-select the first artifact once the list loads and nothing is selected.
@@ -57,6 +62,9 @@ export function App() {
 
   return (
     <div className="layout">
+      {!connected && (
+        <div className="conn-lost">Connection lost — reconnecting…</div>
+      )}
       <aside className="rail">
         <h2>Artifacts</h2>
         <ArtifactList artifacts={artifacts} selectedId={selectedId} onSelect={select} />
