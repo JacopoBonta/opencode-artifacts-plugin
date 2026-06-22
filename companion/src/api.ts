@@ -33,8 +33,13 @@ export async function postVerdict(
 ): Promise<void> {
   await fetch(`/api/artifacts/${id}/verdict`, jsonPost({ status }))
 }
-export function subscribeEvents(onEvent: (e: any) => void): () => void {
+export function subscribeEvents(
+  onEvent: (e: any) => void,
+  onError?: (e: Event) => void,
+): () => void {
   const es = new EventSource("/api/events")
   es.onmessage = (m) => onEvent(JSON.parse(m.data))
+  // EventSource auto-reconnects on error; surface it so the UI can show staleness.
+  es.onerror = (e) => onError?.(e)
   return () => es.close()
 }

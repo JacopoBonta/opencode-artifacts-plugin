@@ -1,5 +1,8 @@
 import type { Anchor } from "./api"
 
+// NOTE: anchorFromOffsets/findAnchorOffsets intentionally mirror the backend's
+// src/anchor.ts (makeAnchor/matchAnchor). The two packages don't share a build,
+// so keep the CONTEXT value and matching algorithm in sync if either changes.
 const CONTEXT = 32
 
 export function anchorFromOffsets(text: string, start: number, end: number): Anchor {
