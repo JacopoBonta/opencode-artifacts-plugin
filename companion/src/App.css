@@ -1,0 +1,26 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; color: #1c1c1e; }
+.layout { display: grid; grid-template-columns: 260px 1fr 320px; height: 100vh; }
+.rail { border-right: 1px solid #e4e4e7; padding: 12px; overflow-y: auto; }
+.comments-rail { border-right: none; border-left: 1px solid #e4e4e7; display: flex; flex-direction: column; }
+.main { padding: 24px; overflow-y: auto; }
+.main-header { display: flex; align-items: center; justify-content: space-between; }
+.artifact-list { list-style: none; margin: 0; padding: 0; }
+.artifact-list li { padding: 8px; border-radius: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.artifact-list li.selected { background: #eef2ff; }
+.badge { font-size: 11px; text-transform: uppercase; }
+.badge-plan { color: #4f46e5; }
+.badge-report { color: #0891b2; }
+.status { font-size: 12px; color: #71717a; }
+.status-awaiting_review { color: #b45309; }
+.status-approved { color: #15803d; }
+.status-changes_requested { color: #b91c1c; }
+.artifact-view ::selection { background: #fde68a; }
+.comment { border: 1px solid #e4e4e7; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.comment blockquote { margin: 0 0 4px; padding-left: 8px; border-left: 3px solid #fde68a; color: #52525b; font-size: 13px; }
+.comment-thread textarea { width: 100%; min-height: 60px; margin-top: 8px; }
+.pending-anchor { background: #fffbeb; padding: 8px; border-radius: 6px; margin-bottom: 8px; font-size: 13px; }
+.action-bar { margin-top: auto; display: flex; gap: 8px; padding-top: 12px; }
+.action-bar button { flex: 1; padding: 8px; cursor: pointer; }
+mark.anchor-highlight { background: #fde68a; border-radius: 2px; cursor: help; }
+.conn-lost { background: #fef3c7; color: #92400e; padding: 8px 16px; font-size: 13px; border-bottom: 1px solid #fde68a; grid-column: 1 / -1; }
