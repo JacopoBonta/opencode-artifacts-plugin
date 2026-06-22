@@ -53,6 +53,25 @@ test("addComment persists and is retrievable", async () => {
   expect(comments).toHaveLength(1)
 })
 
+test("addComment to an unknown artifact throws", async () => {
+  const store = newStore()
+  await expect(
+    store.addComment("nope", { revision: 1, kind: "general", body: "x" }),
+  ).rejects.toThrow("unknown artifact")
+})
+
+test("re-publish derives status from the existing artifact type, not the passed type", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "report", title: "R", content: "v1" })
+  expect(artifact.status).toBe("published")
+  // Re-publish passing a mismatched type="plan" must NOT flip status to awaiting_review.
+  const { artifact: a2 } = await store.publish({
+    type: "plan", title: "R", content: "v2", artifactId: artifact.id,
+  })
+  expect(a2.type).toBe("report")
+  expect(a2.status).toBe("published")
+})
+
 test("awaitVerdict resolves when resolveVerdict is called", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })

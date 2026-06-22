@@ -47,7 +47,6 @@ export function createStore(opts: StoreOptions) {
 
   async function publish(input: PublishInput): Promise<{ artifact: Artifact }> {
     const now = clock()
-    const status = input.type === "plan" ? "awaiting_review" : "published"
 
     // Build the next artifact state without mutating the live reference, so a
     // failed write leaves in-memory state untouched (commit only after I/O).
@@ -58,6 +57,9 @@ export function createStore(opts: StoreOptions) {
       if (!existing) {
         throw new Error(`unknown artifactId: ${input.artifactId}`)
       }
+      // Status follows the artifact's own type, not the (possibly mismatched)
+      // type passed on re-publish.
+      const status = existing.type === "plan" ? "awaiting_review" : "published"
       next = {
         ...existing,
         currentRevision: existing.currentRevision + 1,
@@ -66,6 +68,7 @@ export function createStore(opts: StoreOptions) {
         updatedAt: now,
       }
     } else {
+      const status = input.type === "plan" ? "awaiting_review" : "published"
       next = {
         id: idgen(),
         type: input.type,
@@ -99,6 +102,7 @@ export function createStore(opts: StoreOptions) {
     id: string,
     input: Omit<Comment, "id" | "resolved" | "createdAt">,
   ): Promise<Comment> {
+    if (!artifacts.has(id)) throw new Error(`unknown artifact: ${id}`)
     const c: Comment = { ...input, id: idgen(), resolved: false, createdAt: clock() }
     const list = comments.get(id) ?? []
     list.push(c)
@@ -112,6 +116,13 @@ export function createStore(opts: StoreOptions) {
     return (comments.get(id) ?? []).map((c) => ({ ...c }))
   }
 
+  /**
+   * Block until a verdict arrives via resolveVerdict (the browser approving or
+   * requesting changes). This intentionally has NO timeout: a plan parks the
+   * agent until the human reviews it. It only rejects via disposeAll() when the
+   * plugin shuts down — so closing the browser without acting leaves the agent
+   * blocked until the opencode session ends.
+   */
   function awaitVerdict(id: string): Promise<Verdict> {
     return new Promise<Verdict>((resolve, reject) => {
       pending.set(id, { resolve, reject })

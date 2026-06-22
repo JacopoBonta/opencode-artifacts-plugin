@@ -95,6 +95,20 @@ test("GET /api/events streams an initial ping then broadcast events", async () =
   await reader.cancel().catch(() => {})
 })
 
+test("POST comment to a traversal id (contains ..) or unknown artifact returns 404", async () => {
+  const { srv } = setup()
+  const trav = await fetch(`${srv.url}/api/artifacts/x..x/comments`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ revision: 1, kind: "general", body: "x" }),
+  })
+  expect(trav.status).toBe(404)
+  const unknown = await fetch(`${srv.url}/api/artifacts/nope/comments`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ revision: 1, kind: "general", body: "x" }),
+  })
+  expect(unknown.status).toBe(404)
+})
+
 test("GET unknown revision returns 404, malformed verdict JSON returns 400", async () => {
   const { store, srv } = setup()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })

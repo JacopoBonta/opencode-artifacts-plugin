@@ -21,6 +21,9 @@ const json = (data: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   })
 
+/** Reject artifact ids that could escape the artifacts root on disk writes. */
+const safeId = (id: string) => !id.includes("..") && !id.startsWith(".") && !id.includes("/")
+
 export function createServer(opts: ServerOptions) {
   const { store, events } = opts
   const staticDir = opts.staticDir ?? null
@@ -83,11 +86,17 @@ export function createServer(opts: ServerOptions) {
       const commentMatch = path.match(/^\/api\/artifacts\/([^/]+)\/comments$/)
       if (commentMatch && req.method === "POST") {
         const id = commentMatch[1]
+        if (!safeId(id)) return json({ error: "not found" }, 404)
         let b: any
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
-        const c = await store.addComment(id, {
-          revision: b.revision, kind: b.kind, anchor: b.anchor, body: b.body,
-        })
+        let c
+        try {
+          c = await store.addComment(id, {
+            revision: b.revision, kind: b.kind, anchor: b.anchor, body: b.body,
+          })
+        } catch {
+          return json({ error: "unknown artifact" }, 404)
+        }
         events.broadcast({ type: "comment.added", id })
         return json(c, 201)
       }
@@ -95,6 +104,7 @@ export function createServer(opts: ServerOptions) {
       const verdictMatch = path.match(/^\/api\/artifacts\/([^/]+)\/verdict$/)
       if (verdictMatch && req.method === "POST") {
         const id = verdictMatch[1]
+        if (!safeId(id)) return json({ error: "not found" }, 404)
         let b: any
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
         if (b.status === "refine") {

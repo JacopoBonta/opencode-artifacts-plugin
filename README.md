@@ -25,6 +25,11 @@ refinement** to send feedback for a follow-up turn.
 
 Environment: set `OPENCODE_ARTIFACTS_PORT` to pin the companion port.
 
+> **Note on blocking plans:** publishing a *plan* parks the agent until you
+> Approve or Request changes — there is no timeout by design. If you close the
+> browser without acting, the agent stays blocked until the opencode session
+> ends. Reports never block.
+
 ## Development
 
 - Backend tests: `bun run test`
