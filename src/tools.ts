@@ -16,9 +16,11 @@ export function createPublishTool(deps: ToolDeps) {
   return tool({
     description:
       "Publish an artifact for human review in the browser companion. " +
-      "type='plan' BLOCKS until the user approves or requests changes and " +
-      "returns their verdict; revise and re-publish with the same artifactId " +
-      "on changes_requested. type='report' returns immediately. Content is markdown.",
+      "type='plan' BLOCKS: this tool call does not return until the user approves " +
+      "or requests changes — do not issue any other tool call while waiting. It " +
+      "returns their verdict; on changes_requested, revise and re-publish with the " +
+      "same artifactId to add a revision, looping until approved. type='report' " +
+      "returns immediately. Content is markdown.",
     args: {
       type: tool.schema.enum(["plan", "report"]).describe("plan gates the work; report is informational"),
       title: tool.schema.string().describe("short artifact title"),
@@ -29,7 +31,7 @@ export function createPublishTool(deps: ToolDeps) {
         .describe("omit to create new; pass to add a revision to an existing artifact"),
     },
     async execute(args, context) {
-      const sessionID = (context as { sessionID?: string }).sessionID
+      const sessionID = context.sessionID
       const { artifact } = await store.publish({
         type: args.type,
         title: args.title,
