@@ -26,6 +26,11 @@ export function App() {
     })
   }, [selectedId, refreshList, refreshDetail])
 
+  // Auto-select the first artifact once the list loads and nothing is selected.
+  useEffect(() => {
+    if (!selectedId && artifacts.length) select(artifacts[0].id)
+  }, [artifacts, selectedId])
+
   function select(id: string) {
     setSelectedId(id)
     setPendingAnchor(undefined)
