@@ -12,8 +12,12 @@ test("plan shows Approve + Request changes and fires callbacks", async () => {
   expect(onChanges).toHaveBeenCalled()
 })
 
-test("report shows only Request refinement", () => {
-  render(<ActionBar type="report" onApprove={() => {}} onRequestChanges={() => {}} onRefine={() => {}} />)
+test("report shows only Request refinement and fires onRefine", async () => {
+  const onRefine = vi.fn()
+  render(<ActionBar type="report" onApprove={() => {}} onRequestChanges={() => {}} onRefine={onRefine} />)
   expect(screen.queryByRole("button", { name: /approve/i })).toBeNull()
-  expect(screen.getByRole("button", { name: /request refinement/i })).toBeInTheDocument()
+  const btn = screen.getByRole("button", { name: /request refinement/i })
+  expect(btn).toBeInTheDocument()
+  await userEvent.click(btn)
+  expect(onRefine).toHaveBeenCalled()
 })

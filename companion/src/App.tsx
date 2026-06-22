@@ -16,6 +16,12 @@ export function App() {
   const refreshList = useCallback(async () => setArtifacts(await api.listArtifacts()), [])
   const refreshDetail = useCallback(async (id: string) => setDetail(await api.getArtifact(id)), [])
 
+  const select = useCallback((id: string) => {
+    setSelectedId(id)
+    setPendingAnchor(undefined)
+    refreshDetail(id)
+  }, [refreshDetail])
+
   useEffect(() => { refreshList() }, [refreshList])
 
   useEffect(() => {
@@ -29,13 +35,7 @@ export function App() {
   // Auto-select the first artifact once the list loads and nothing is selected.
   useEffect(() => {
     if (!selectedId && artifacts.length) select(artifacts[0].id)
-  }, [artifacts, selectedId])
-
-  function select(id: string) {
-    setSelectedId(id)
-    setPendingAnchor(undefined)
-    refreshDetail(id)
-  }
+  }, [artifacts, selectedId, select])
 
   async function addComment(body: string, anchor?: Anchor) {
     if (!detail) return
