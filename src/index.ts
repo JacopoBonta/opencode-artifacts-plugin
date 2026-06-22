@@ -25,14 +25,16 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
     staticDir: existsSync(staticDir) ? staticDir : null,
     onRefine: async (id, comments) => {
       const artifact = await store.get(id)
-      const sid = artifact?.sessionID ?? lastSessionID
+      // Prefer the current active session over the (possibly stale) session
+      // that first published the artifact.
+      const sid = lastSessionID ?? artifact?.sessionID
       const summary = comments
         .map((c) =>
           `- ${c.anchor?.quote ? `(re: "${c.anchor.quote}") ` : ""}${c.body}`,
         )
         .join("\n")
       const text =
-        `The user requested refinement of report "${artifact?.title}". Their comments:\n${summary}\nPlease revise and re-publish with artifactId "${id}".`
+        `The user requested refinement of report "${artifact?.title ?? id}". Their comments:\n${summary}\nPlease revise and re-publish with artifactId "${id}".`
 
       try {
         if (sid) {
