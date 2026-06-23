@@ -124,3 +124,21 @@ test("the left rail shows a theme toggle that flips the theme", async () => {
   await userEvent.click(btn)
   expect(document.documentElement.dataset.theme).toBe("light")
 })
+
+test("a report is read-only: no comment input, no action buttons, shows the read-only note", async () => {
+  vi.mocked(api.listArtifacts).mockResolvedValue([
+    { id: "id1", type: "report", title: "R", status: "published", currentRevision: 1, createdAt: 0, updatedAt: 0 },
+  ])
+  vi.mocked(api.getArtifact).mockResolvedValue({
+    artifact: { id: "id1", type: "report", title: "R", status: "published", currentRevision: 1, createdAt: 0, updatedAt: 0 },
+    content: "# Report Body",
+    comments: [],
+  })
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "Report Body" }))
+  expect(screen.queryByPlaceholderText("Add a comment")).toBeNull()
+  expect(screen.queryByRole("button", { name: /approve/i })).toBeNull()
+  expect(screen.queryByRole("button", { name: /request changes/i })).toBeNull()
+  expect(screen.queryByRole("button", { name: /request refinement/i })).toBeNull()
+  expect(screen.getByText(/agent report — read-only/i)).toBeInTheDocument()
+})
