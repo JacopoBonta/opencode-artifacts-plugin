@@ -7,6 +7,7 @@ import { ArtifactView } from "./components/ArtifactView"
 import { CommentThread } from "./components/CommentThread"
 import { ActionBar } from "./components/ActionBar"
 import { RevisionSwitcher } from "./components/RevisionSwitcher"
+import { ThemeToggle } from "./components/ThemeToggle"
 
 export function App() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
@@ -102,7 +103,10 @@ export function App() {
         <div className="conn-lost">Connection lost — reconnecting…</div>
       )}
       <aside className="rail">
-        <h2>Artifacts</h2>
+        <div className="rail-header">
+          <h2>Artifacts</h2>
+          <ThemeToggle />
+        </div>
         <ArtifactList artifacts={artifacts} selectedId={selectedId} onSelect={select} />
       </aside>
       <main className="main">

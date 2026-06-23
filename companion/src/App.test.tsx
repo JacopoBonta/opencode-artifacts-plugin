@@ -115,3 +115,12 @@ test("an approved plan is locked: no actions, no comment input, approved banner"
   expect(screen.queryByPlaceholderText("Add a comment")).toBeNull()
   expect(screen.getByText("a note")).toBeInTheDocument()
 })
+
+test("the left rail shows a theme toggle that flips the theme", async () => {
+  localStorage.clear()
+  document.documentElement.dataset.theme = "dark"
+  render(<App />)
+  const btn = await screen.findByRole("button", { name: /toggle theme/i })
+  await userEvent.click(btn)
+  expect(document.documentElement.dataset.theme).toBe("light")
+})
