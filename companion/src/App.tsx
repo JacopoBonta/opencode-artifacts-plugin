@@ -91,6 +91,7 @@ export function App() {
   const total = detail?.artifact.currentRevision ?? 0
   const viewing = viewedRevision ?? total
   const isLatest = viewing === total
+  const interactive = isLatest && detail?.artifact.status !== "approved"
   const revisionComments = detail
     ? (isLatest ? detail.comments : detail.comments.filter((c) => c.revision === viewing))
     : []
@@ -122,11 +123,14 @@ export function App() {
                 <button type="button" onClick={() => pickRevision(total)}>Back to latest</button>
               </div>
             )}
+            {isLatest && detail.artifact.status === "approved" && (
+              <div className="approved-banner">✓ Approved — review closed</div>
+            )}
             <ArtifactView
               content={isLatest ? detail.content : historicalContent ?? ""}
               comments={revisionComments}
               highlightResolved={!isLatest}
-              onAnchor={isLatest ? setPendingAnchor : () => {}}
+              onAnchor={interactive ? setPendingAnchor : () => {}}
               onHighlightClick={onHighlightClick}
               flashAnchorId={flashAnchor?.id}
               flashKey={flashAnchor?.key}
@@ -139,7 +143,7 @@ export function App() {
       <aside className="rail comments-rail">
         {detail && (
           <>
-            {isLatest ? (
+            {interactive ? (
               <>
                 {pendingAnchor && (
                   <div className="pending-anchor">
@@ -163,7 +167,7 @@ export function App() {
               </>
             ) : (
               <CommentThread
-                title={`Comments · revision ${viewing}`}
+                title={isLatest ? "Comments" : `Comments · revision ${viewing}`}
                 comments={revisionComments}
                 onAdd={() => {}}
                 readOnly

@@ -148,3 +148,26 @@ test("after a revise, changes_requested returns only the new revision's unresolv
     expect(verdict.comments[0].body).toBe("new v2 note")
   }
 })
+
+test("posting a comment to an approved artifact returns 409", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  await store.resolveVerdict(artifact.id, { status: "approved" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/comments`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ revision: 1, kind: "general", body: "late comment" }),
+  })
+  expect(res.status).toBe(409)
+})
+
+test("posting a verdict to an approved artifact returns 409 and leaves status approved", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  await store.resolveVerdict(artifact.id, { status: "approved" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "changes_requested" }),
+  })
+  expect(res.status).toBe(409)
+  expect((await store.get(artifact.id))!.status).toBe("approved")
+})
