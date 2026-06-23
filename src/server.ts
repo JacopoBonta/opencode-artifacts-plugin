@@ -90,6 +90,9 @@ export function createServer(opts: ServerOptions) {
       if (commentMatch && req.method === "POST") {
         const id = commentMatch[1]
         if (!safeId(id)) return json({ error: "not found" }, 404)
+        if ((await store.get(id))?.status === "approved") {
+          return json({ error: "artifact approved" }, 409)
+        }
         let b: any
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
         let c
@@ -108,6 +111,9 @@ export function createServer(opts: ServerOptions) {
       if (verdictMatch && req.method === "POST") {
         const id = verdictMatch[1]
         if (!safeId(id)) return json({ error: "not found" }, 404)
+        if ((await store.get(id))?.status === "approved") {
+          return json({ error: "artifact approved" }, 409)
+        }
         let b: any
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
         if (b.status === "refine") {
