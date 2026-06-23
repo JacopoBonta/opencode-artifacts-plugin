@@ -34,3 +34,4 @@ mark.anchor-highlight { background: #fde68a; border-radius: 2px; cursor: help; }
 .comment.clickable { cursor: pointer; }
 @keyframes flash-pulse { 0% { box-shadow: 0 0 0 2px #f59e0b; } 100% { box-shadow: 0 0 0 2px transparent; } }
 .flash { animation: flash-pulse 1.2s ease-out; border-radius: 3px; }
+.approved-banner { margin-bottom: 12px; padding: 6px 10px; border-radius: 6px; background: #ecfdf5; color: #065f46; font-size: 13px; }

@@ -100,3 +100,18 @@ test("clicking a highlight in the document flashes its comment in the rail", asy
     expect(comment?.classList.contains("flash")).toBe(true)
   })
 })
+
+test("an approved plan is locked: no actions, no comment input, approved banner", async () => {
+  vi.mocked(api.getArtifact).mockResolvedValue({
+    artifact: { id: "id1", type: "plan", title: "P", status: "approved", currentRevision: 1, createdAt: 0, updatedAt: 0 },
+    content: "# Approved Plan",
+    comments: [{ id: "c1", revision: 1, kind: "general", body: "a note", resolved: false, createdAt: 0 }],
+  })
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "Approved Plan" }))
+  expect(screen.getByText(/approved — review closed/i)).toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: /approve/i })).toBeNull()
+  expect(screen.queryByRole("button", { name: /request changes/i })).toBeNull()
+  expect(screen.queryByPlaceholderText("Add a comment")).toBeNull()
+  expect(screen.getByText("a note")).toBeInTheDocument()
+})
