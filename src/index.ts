@@ -2,7 +2,6 @@ import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { existsSync } from "node:fs"
 import type { Plugin } from "@opencode-ai/plugin"
-import type { Event } from "@opencode-ai/sdk"
 import { createStore } from "./store"
 import { createBroadcaster } from "./events"
 import { createServer } from "./server"
@@ -15,7 +14,6 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
   await store.load()
 
   const events = createBroadcaster()
-  let lastSessionID: string | undefined
 
   const staticDir = join(here, "..", "companion", "dist")
   const server = createServer({
@@ -23,32 +21,6 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
     events,
     port: Number(process.env.OPENCODE_ARTIFACTS_PORT ?? 0),
     staticDir: existsSync(staticDir) ? staticDir : null,
-    onRefine: async (id, comments) => {
-      const artifact = await store.get(id)
-      // Prefer the current active session over the (possibly stale) session
-      // that first published the artifact.
-      const sid = lastSessionID ?? artifact?.sessionID
-      const summary = comments
-        .map((c) =>
-          `- ${c.anchor?.quote ? `(re: "${c.anchor.quote}") ` : ""}${c.body}`,
-        )
-        .join("\n")
-      const text =
-        `The user requested refinement of report "${artifact?.title ?? id}". Their comments:\n${summary}\nPlease revise and re-publish with artifactId "${id}".`
-
-      try {
-        if (sid) {
-          await client.session.prompt({
-            path: { id: sid },
-            body: { parts: [{ type: "text", text }] },
-          })
-        } else {
-          await client.tui.appendPrompt({ body: { text } })
-        }
-      } catch {
-        await (client.tui.appendPrompt?.({ body: { text } }) ?? Promise.resolve()).catch(() => {})
-      }
-    },
   })
 
   let opened = false
@@ -72,18 +44,6 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
 
   return {
     tool: { publish_artifact: tool },
-    event: async ({ event }: { event: Event }) => {
-      // Extract sessionID from the many event shapes that carry one.
-      // Most events put it directly on properties; session.created/updated/deleted
-      // put it on properties.info.id (Session.id).
-      const props = (event as any).properties
-      if (!props) return
-      const sid: string | undefined =
-        props.sessionID ??
-        props.info?.sessionID ??
-        props.info?.id
-      if (sid) lastSessionID = sid
-    },
     dispose: async () => {
       store.disposeAll()
       server.stop()

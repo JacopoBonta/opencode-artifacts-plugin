@@ -13,13 +13,9 @@ function setup() {
   const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
   const store = createStore({ root: dir, clock: () => 1, idgen: (() => { let n = 0; return () => `id${++n}` })() })
   const events = createBroadcaster()
-  const refine = { called: [] as any[] }
-  const srv = createServer({
-    store, events, port: 0, staticDir: null,
-    onRefine: (id, comments) => { refine.called.push({ id, comments }) },
-  })
+  const srv = createServer({ store, events, port: 0, staticDir: null })
   stop = srv.stop
-  return { store, events, srv, refine }
+  return { store, events, srv }
 }
 
 test("GET /api/artifacts lists artifacts", async () => {
@@ -64,16 +60,24 @@ test("POST comment then verdict resolves a pending plan", async () => {
   }
 })
 
-test("POST verdict {refine} on a report triggers onRefine", async () => {
-  const { store, srv, refine } = setup()
+test("posting a comment to a report returns 409 (reports are read-only)", async () => {
+  const { store, srv } = setup()
   const { artifact } = await store.publish({ type: "report", title: "R", content: "done" })
-  await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ status: "refine" }),
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/comments`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ revision: 1, kind: "general", body: "nope" }),
   })
-  expect(refine.called).toHaveLength(1)
-  expect(refine.called[0].id).toBe(artifact.id)
+  expect(res.status).toBe(409)
+})
+
+test("posting a verdict to a report returns 409", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "report", title: "R", content: "done" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "changes_requested" }),
+  })
+  expect(res.status).toBe(409)
 })
 
 test("GET /api/events streams an initial ping then broadcast events", async () => {

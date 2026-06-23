@@ -2,7 +2,6 @@ import { join } from "node:path"
 import { existsSync } from "node:fs"
 import type { Store } from "./store"
 import type { Broadcaster } from "./events"
-import type { Comment } from "./types"
 
 export interface ServerOptions {
   store: Store
@@ -11,8 +10,6 @@ export interface ServerOptions {
   port?: number
   /** directory of prebuilt companion assets, or null to disable static serving */
   staticDir?: string | null
-  /** called when a report's "request refinement" verdict arrives */
-  onRefine?: (artifactId: string, comments: Comment[]) => void
 }
 
 const json = (data: unknown, status = 200) =>
@@ -90,8 +87,9 @@ export function createServer(opts: ServerOptions) {
       if (commentMatch && req.method === "POST") {
         const id = commentMatch[1]
         if (!safeId(id)) return json({ error: "not found" }, 404)
-        if ((await store.get(id))?.status === "approved") {
-          return json({ error: "artifact approved" }, 409)
+        const ca = await store.get(id)
+        if (ca && (ca.status === "approved" || ca.type === "report")) {
+          return json({ error: "read-only artifact" }, 409)
         }
         let b: any
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
@@ -111,17 +109,12 @@ export function createServer(opts: ServerOptions) {
       if (verdictMatch && req.method === "POST") {
         const id = verdictMatch[1]
         if (!safeId(id)) return json({ error: "not found" }, 404)
-        if ((await store.get(id))?.status === "approved") {
-          return json({ error: "artifact approved" }, 409)
+        const va = await store.get(id)
+        if (va && (va.status === "approved" || va.type === "report")) {
+          return json({ error: "read-only artifact" }, 409)
         }
         let b: any
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
-        if (b.status === "refine") {
-          const comments = (await store.getComments(id)).filter((c) => !c.resolved)
-          opts.onRefine?.(id, comments)
-          events.broadcast({ type: "artifact.updated", id })
-          return json({ ok: true })
-        }
         const comments =
           b.status === "changes_requested"
             ? (await store.getComments(id)).filter((c) => !c.resolved)
