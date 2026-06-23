@@ -15,12 +15,27 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
 
   const events = createBroadcaster()
 
+  const sessionTitleCache = new Map<string, string | undefined>()
+  async function resolveSessionTitle(sessionID: string): Promise<string | undefined> {
+    if (sessionTitleCache.has(sessionID)) return sessionTitleCache.get(sessionID)
+    let title: string | undefined
+    try {
+      const res = (await client.session.get({ path: { id: sessionID } })) as any
+      title = res?.data?.title ?? res?.title
+    } catch {
+      title = undefined
+    }
+    sessionTitleCache.set(sessionID, title)
+    return title
+  }
+
   const staticDir = join(here, "..", "companion", "dist")
   const server = createServer({
     store,
     events,
     port: Number(process.env.OPENCODE_ARTIFACTS_PORT ?? 0),
     staticDir: existsSync(staticDir) ? staticDir : null,
+    resolveSessionTitle,
   })
 
   let opened = false

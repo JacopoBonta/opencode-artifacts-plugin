@@ -161,3 +161,11 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 
 @keyframes flash-pulse { 0% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: 0 0 0 2px transparent; } }
 .flash { animation: flash-pulse 1.2s ease-out; border-radius: 4px; }
+.artifact-groups { display: flex; flex-direction: column; gap: 6px; }
+.artifact-group { display: flex; flex-direction: column; }
+.group-header { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 4px; background: none; border: none; color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; text-align: left; }
+.group-header:hover { color: var(--text); }
+.group-chevron { width: 10px; font-size: 10px; }
+.group-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: normal; font-size: 12.5px; }
+.group-count { background: var(--surface-2); color: var(--text-muted); border-radius: 999px; padding: 1px 7px; font-size: 10px; }
+.artifact-group .artifact-list { padding-left: 4px; }

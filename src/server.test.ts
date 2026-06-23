@@ -175,3 +175,24 @@ test("posting a verdict to an approved artifact returns 409 and leaves status ap
   expect(res.status).toBe(409)
   expect((await store.get(artifact.id))!.status).toBe("approved")
 })
+
+test("GET /api/artifacts attaches sessionTitle when a resolver is provided", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  const store = createStore({ root: dir, clock: () => 1, idgen: (() => { let n = 0; return () => `id${++n}` })() })
+  const events = createBroadcaster()
+  const srv = createServer({
+    store, events, port: 0, staticDir: null,
+    resolveSessionTitle: async (id) => `Title for ${id}`,
+  })
+  stop = srv.stop
+  await store.publish({ type: "plan", title: "P", content: "x", sessionID: "ses_abc" })
+  const body = await (await fetch(`${srv.url}/api/artifacts`)).json()
+  expect(body[0].sessionTitle).toBe("Title for ses_abc")
+})
+
+test("GET /api/artifacts omits sessionTitle when no resolver is configured", async () => {
+  const { store, srv } = setup()
+  await store.publish({ type: "plan", title: "P", content: "x", sessionID: "ses_abc" })
+  const body = await (await fetch(`${srv.url}/api/artifacts`)).json()
+  expect(body[0].sessionTitle).toBeUndefined()
+})

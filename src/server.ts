@@ -10,6 +10,8 @@ export interface ServerOptions {
   port?: number
   /** directory of prebuilt companion assets, or null to disable static serving */
   staticDir?: string | null
+  /** resolve a human title for a session id (for grouping); optional */
+  resolveSessionTitle?: (sessionID: string) => Promise<string | undefined>
 }
 
 const json = (data: unknown, status = 200) =>
@@ -60,7 +62,16 @@ export function createServer(opts: ServerOptions) {
 
       // --- API ---
       if (path === "/api/artifacts" && req.method === "GET") {
-        return json(await store.list())
+        const artifacts = await store.list()
+        if (!opts.resolveSessionTitle) return json(artifacts)
+        const resolve = opts.resolveSessionTitle
+        const withTitles = await Promise.all(
+          artifacts.map(async (a) => ({
+            ...a,
+            sessionTitle: a.sessionID ? await resolve(a.sessionID) : undefined,
+          })),
+        )
+        return json(withTitles)
       }
 
       const detail = path.match(/^\/api\/artifacts\/([^/]+)$/)
