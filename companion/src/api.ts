@@ -32,7 +32,7 @@ export async function postComment(
 }
 export async function postVerdict(
   id: string,
-  status: "approved" | "changes_requested" | "refine",
+  status: "approved" | "changes_requested",
 ): Promise<void> {
   await fetch(`/api/artifacts/${id}/verdict`, jsonPost({ status }))
 }

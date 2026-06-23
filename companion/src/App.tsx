@@ -83,7 +83,7 @@ export function App() {
     refreshDetail(detail.artifact.id)
   }
 
-  async function verdict(status: "approved" | "changes_requested" | "refine") {
+  async function verdict(status: "approved" | "changes_requested") {
     if (!detail) return
     await api.postVerdict(detail.artifact.id, status)
     refreshDetail(detail.artifact.id)
@@ -92,7 +92,7 @@ export function App() {
   const total = detail?.artifact.currentRevision ?? 0
   const viewing = viewedRevision ?? total
   const isLatest = viewing === total
-  const interactive = isLatest && detail?.artifact.status !== "approved"
+  const interactive = isLatest && detail?.artifact.type === "plan" && detail?.artifact.status !== "approved"
   const revisionComments = detail
     ? (isLatest ? detail.comments : detail.comments.filter((c) => c.revision === viewing))
     : []
@@ -163,12 +163,12 @@ export function App() {
                   flashKey={flashComment?.key}
                 />
                 <ActionBar
-                  type={detail.artifact.type}
                   onApprove={() => verdict("approved")}
                   onRequestChanges={() => verdict("changes_requested")}
-                  onRefine={() => verdict("refine")}
                 />
               </>
+            ) : detail.artifact.type === "report" ? (
+              <p className="empty">Agent report — read-only.</p>
             ) : (
               <CommentThread
                 title={isLatest ? "Comments" : `Comments · revision ${viewing}`}
