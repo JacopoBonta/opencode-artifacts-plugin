@@ -22,6 +22,11 @@ export function App() {
   const [detail, setDetail] = useState<ArtifactDetail>()
   const [pendingAnchor, setPendingAnchor] = useState<Anchor>()
   const [connected, setConnected] = useState(true)
+  // The opencode session the user is currently in (pushed over SSE), and the set
+  // of artifact ids with new/updated activity not yet opened — drives the
+  // current-session highlight and the activity dots.
+  const [activeSessionID, setActiveSessionID] = useState<string>()
+  const [unseen, setUnseen] = useState<Set<string>>(new Set())
   const [submittingVerdict, setSubmittingVerdict] = useState(false)
   // undefined = viewing the latest revision
   const [viewedRevision, setViewedRevision] = useState<number>()
@@ -40,6 +45,13 @@ export function App() {
     setPendingAnchor(undefined)
     setViewedRevision(undefined)
     setHistoricalContent(undefined)
+    // Opening an artifact clears its activity dot.
+    setUnseen((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
     refreshDetail(id)
   }, [refreshDetail])
 
@@ -50,15 +62,39 @@ export function App() {
       (e) => {
         setConnected(true)
         if (e.type === "ping") return
+        if (e.type === "session.active") {
+          setActiveSessionID(e.sessionID)
+          return
+        }
         refreshList()
-        // A deletion may remove the selected artifact; the membership effect
-        // clears the selection once the refreshed list arrives.
-        if (e.type === "artifact.deleted") return
+        if (e.type === "artifact.deleted") {
+          // Drop any pending dot for the removed artifact; the membership effect
+          // clears the selection once the refreshed list arrives.
+          setUnseen((prev) => {
+            if (!prev.has(e.id)) return prev
+            const next = new Set(prev)
+            next.delete(e.id)
+            return next
+          })
+          return
+        }
         if (selectedId && e.id === selectedId) {
           // A new revision may have arrived — return to the latest view.
           setViewedRevision(undefined)
           setHistoricalContent(undefined)
           refreshDetail(selectedId)
+          return
+        }
+        // New/updated activity on an artifact that isn't open — flag it.
+        if (
+          e.type === "artifact.published" ||
+          e.type === "artifact.updated" ||
+          e.type === "comment.added"
+        ) {
+          setUnseen((prev) => {
+            if (prev.has(e.id)) return prev
+            return new Set(prev).add(e.id)
+          })
         }
       },
       () => setConnected(false),
@@ -174,6 +210,8 @@ export function App() {
         <ArtifactList
           artifacts={artifacts}
           selectedId={selectedId}
+          activeSessionID={activeSessionID}
+          unseenIds={unseen}
           onSelect={select}
           onUnarchive={unarchive}
           onDelete={remove}

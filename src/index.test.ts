@@ -41,8 +41,22 @@ test("plugin initializes, exposes tool + workflow hooks, and disposes", async ()
   const hooks = await init(dir)
   expect(hooks.tool?.publish_artifact).toBeDefined()
   expect(hooks["tool.execute.before"]).toBeDefined()
+  expect(hooks["chat.message"]).toBeDefined()
   expect(hooks["experimental.chat.system.transform"]).toBeDefined()
   expect(hooks["experimental.session.compacting"]).toBeDefined()
+  await hooks.dispose?.()
+})
+
+test("chat.message tracks the active session (idempotent, no throw on repeat/empty)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "proj-"))
+  const hooks = await init(dir)
+  const onMessage = hooks["chat.message"]!
+  // First message sets the active session; a repeat of the same id is a no-op;
+  // switching sessions updates it; an empty id is ignored. None should throw.
+  await onMessage({ sessionID: "s1" } as any, {} as any)
+  await onMessage({ sessionID: "s1" } as any, {} as any)
+  await onMessage({ sessionID: "s2" } as any, {} as any)
+  await onMessage({ sessionID: "" } as any, {} as any)
   await hooks.dispose?.()
 })
 

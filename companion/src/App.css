@@ -192,6 +192,12 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 
 @keyframes flash-pulse { 0% { box-shadow: 0 0 0 2px var(--accent); } 100% { box-shadow: 0 0 0 2px transparent; } }
 .flash { animation: flash-pulse 1.2s ease-out; border-radius: 4px; }
+@keyframes activity-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  50% { opacity: 0.55; transform: scale(0.82); box-shadow: 0 0 0 3px transparent; }
+}
+.activity-dot { flex: none; width: 7px; height: 7px; border-radius: 999px; background: var(--accent); animation: activity-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .activity-dot { animation: none; } }
 .artifact-groups { display: flex; flex-direction: column; gap: 6px; }
 .artifact-group { display: flex; flex-direction: column; }
 .group-header { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 4px; background: none; border: none; color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; text-align: left; }
@@ -199,6 +205,9 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .group-chevron { width: 10px; font-size: 10px; }
 .group-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: normal; font-size: 12.5px; }
 .group-count { background: var(--surface-2); color: var(--text-muted); border-radius: 999px; padding: 1px 7px; font-size: 10px; }
+.group-header.current { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: var(--radius-sm); box-shadow: inset 3px 0 0 var(--accent); }
+.group-header.current .group-title { color: var(--accent); }
+.current-badge { flex: none; color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); border-radius: 999px; padding: 1px 7px; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .artifact-group .artifact-list { padding-left: 4px; }
 
 /* roadmap nodes with nested phase children */

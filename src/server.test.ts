@@ -99,6 +99,62 @@ test("GET /api/events streams an initial ping then broadcast events", async () =
   await reader.cancel().catch(() => {})
 })
 
+test("GET /api/events emits session.active on connect when getActiveSession is set", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  const store = createStore({ root: dir, clock: () => 1, idgen: (() => { let n = 0; return () => `id${++n}` })() })
+  const events = createBroadcaster()
+  const srv = createServer({
+    store, events, port: 0, staticDir: null,
+    getActiveSession: () => "ses_live",
+  })
+  stop = srv.stop
+
+  const ctrl = new AbortController()
+  const res = await fetch(`${srv.url}/api/events`, { signal: ctrl.signal })
+  const reader = res.body!.getReader()
+  const dec = new TextDecoder()
+
+  // The ping and the session.active frame may arrive in one or two chunks.
+  let buf = dec.decode((await reader.read()).value)
+  if (!buf.includes("session.active")) buf += dec.decode((await reader.read()).value)
+  expect(buf).toContain('"type":"ping"')
+  expect(buf).toContain('"type":"session.active"')
+  expect(buf).toContain('"ses_live"')
+
+  ctrl.abort()
+  await reader.cancel().catch(() => {})
+})
+
+test("GET /api/events omits session.active on connect when no active session", async () => {
+  const { srv } = setup()
+  const ctrl = new AbortController()
+  const res = await fetch(`${srv.url}/api/events`, { signal: ctrl.signal })
+  const reader = res.body!.getReader()
+  const dec = new TextDecoder()
+  const first = dec.decode((await reader.read()).value)
+  expect(first).toContain('"type":"ping"')
+  expect(first).not.toContain("session.active")
+  ctrl.abort()
+  await reader.cancel().catch(() => {})
+})
+
+test("broadcasting session.active reaches an SSE subscriber", async () => {
+  const { events, srv } = setup()
+  const ctrl = new AbortController()
+  const res = await fetch(`${srv.url}/api/events`, { signal: ctrl.signal })
+  const reader = res.body!.getReader()
+  const dec = new TextDecoder()
+  dec.decode((await reader.read()).value) // ping
+
+  events.broadcast({ type: "session.active", sessionID: "ses_next" })
+  const frame = dec.decode((await reader.read()).value)
+  expect(frame).toContain('"type":"session.active"')
+  expect(frame).toContain('"ses_next"')
+
+  ctrl.abort()
+  await reader.cancel().catch(() => {})
+})
+
 test("POST comment to a traversal id (contains ..) or unknown artifact returns 404", async () => {
   const { srv } = setup()
   const trav = await fetch(`${srv.url}/api/artifacts/x..x/comments`, {

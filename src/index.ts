@@ -36,6 +36,10 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
     return title
   }
 
+  // The opencode session the user is currently in, surfaced to the companion so
+  // it can highlight that session's group. Updated from the chat.message hook.
+  let currentSessionID: string | undefined
+
   const staticDir = join(here, "..", "companion", "dist")
   const server = createServer({
     store,
@@ -43,6 +47,7 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
     port: Number(process.env.OPENCODE_ARTIFACTS_PORT ?? 0),
     staticDir: existsSync(staticDir) ? staticDir : null,
     resolveSessionTitle,
+    getActiveSession: () => currentSessionID,
   })
 
   let opened = false
@@ -97,6 +102,16 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
 
   return {
     tool: { publish_artifact: tool },
+
+    // Track the session the user is actively in: a received user message is the
+    // clearest "current session" signal. Broadcast changes so the companion can
+    // move the highlight in real time.
+    "chat.message": async (input) => {
+      if (input.sessionID && input.sessionID !== currentSessionID) {
+        currentSessionID = input.sessionID
+        events.broadcast({ type: "session.active", sessionID: currentSessionID })
+      }
+    },
 
     // Hard gate: block file-mutating tools until the session has an approved
     // plan. publish_artifact and read-only/exploration calls are never gated.

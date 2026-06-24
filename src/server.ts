@@ -12,6 +12,8 @@ export interface ServerOptions {
   staticDir?: string | null
   /** resolve a human title for a session id (for grouping); optional */
   resolveSessionTitle?: (sessionID: string) => Promise<string | undefined>
+  /** the opencode session the user is currently in, for highlighting; optional */
+  getActiveSession?: () => string | undefined
 }
 
 const json = (data: unknown, status = 200) =>
@@ -44,6 +46,11 @@ export function createServer(opts: ServerOptions) {
             const send = (data: string) =>
               controller.enqueue(enc.encode(`data: ${data}\n\n`))
             send(JSON.stringify({ type: "ping" }))
+            // Sync the freshly-connected client to the current session so a page
+            // load/reconnect highlights the right group without waiting for the
+            // next user message.
+            const active = opts.getActiveSession?.()
+            if (active) send(JSON.stringify({ type: "session.active", sessionID: active }))
             const unsub = events.subscribe(send)
             req.signal.addEventListener("abort", () => {
               unsub()

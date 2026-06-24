@@ -39,6 +39,45 @@ test("clicking an artifact calls onSelect", async () => {
   expect(onSelect).toHaveBeenCalledWith("a1")
 })
 
+test("marks the active session's group as current", () => {
+  const { container } = render(
+    <ArtifactList artifacts={arts} selectedId="a1" activeSessionID="ses_222" onSelect={() => {}} />,
+  )
+  // The current badge sits on the active session's header (not the selected one).
+  expect(screen.getByText("current")).toBeInTheDocument()
+  const current = container.querySelector(".group-header.current")
+  expect(current?.textContent).toContain("Fix bug")
+})
+
+test("shows an activity dot on an unseen artifact in an open group", () => {
+  const { container } = render(
+    <ArtifactList
+      artifacts={arts}
+      selectedId="a1"
+      unseenIds={new Set(["a2"])}
+      onSelect={() => {}}
+    />,
+  )
+  // a2 (Report A) is in the open (selected) group, so its dot renders inline.
+  expect(container.querySelectorAll(".activity-dot")).toHaveLength(1)
+})
+
+test("bubbles an activity dot to a collapsed group's header", () => {
+  const { container } = render(
+    <ArtifactList
+      artifacts={arts}
+      selectedId="a1"
+      unseenIds={new Set(["b1"])}
+      onSelect={() => {}}
+    />,
+  )
+  // b1 lives in the collapsed "Fix bug" group; the dot shows on its header.
+  const dot = container.querySelector(".group-header .activity-dot")
+  expect(dot).not.toBeNull()
+  // Plan B itself stays hidden because the group is collapsed.
+  expect(screen.queryByText("Plan B")).toBeNull()
+})
+
 const withArchived: Artifact[] = [
   ...arts,
   { id: "z1", type: "plan", title: "Old Plan", status: "approved", currentRevision: 1, createdAt: 5, updatedAt: 5, sessionID: "ses_111", sessionTitle: "Build login", archived: true },
