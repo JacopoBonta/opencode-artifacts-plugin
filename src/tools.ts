@@ -23,7 +23,10 @@ export function createPublishTool(deps: ToolDeps) {
       "same artifactId to add a revision, looping until approved. An approved " +
       "verdict may still include comments — treat them as guidance you must honor " +
       "while implementing. type='report' " +
-      "returns immediately. Content is markdown. " +
+      "returns immediately; publishing a report also COMPLETES the session's " +
+      "current standalone plan and re-closes the edit gate (start new work with a " +
+      "fresh plan, or resubmit the completed plan). A phase report (with parentId) " +
+      "is a milestone and does NOT complete the roadmap. Content is markdown. " +
       "Required workflow: for any implementation request, do a deep analysis then " +
       "publish a plan FIRST — file edits are blocked until a plan is approved — " +
       "then implement, then publish a report. A plan MUST contain these ## " +

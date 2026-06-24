@@ -113,6 +113,70 @@ test("getActivePlan skips drafts and tracks the most-recently-updated non-draft 
   expect(store.getActivePlan("s1")!.id).toBe(p1.id)
 })
 
+test("a report completes the session's standalone active plan; the gate re-closes", async () => {
+  const store = newStore()
+  const s = { sessionID: "s1" }
+  const { artifact: plan } = await store.publish({ type: "plan", title: "P", content: "v1", ...s })
+  await store.resolveVerdict(plan.id, { status: "approved" })
+  expect(store.getActivePlan("s1")!.id).toBe(plan.id)
+
+  // Publishing a report in the same session marks the plan completed → no longer active.
+  await store.publish({ type: "report", title: "R", content: "done", ...s })
+  expect(store.getActivePlan("s1")).toBeUndefined()
+  expect((await store.get(plan.id))!.completed).toBe(true)
+  expect(store.getLastCompletedPlan("s1")!.id).toBe(plan.id)
+})
+
+test("a normal progress update keeps a completed plan completed; resubmit re-opens it", async () => {
+  const store = newStore()
+  const s = { sessionID: "s1" }
+  const { artifact: plan } = await store.publish({ type: "plan", title: "P", content: "v1", ...s })
+  await store.resolveVerdict(plan.id, { status: "approved" })
+  await store.publish({ type: "report", title: "R", content: "done", ...s })
+
+  // A progress update must NOT reopen the gate.
+  await store.publish({ type: "plan", title: "P", content: "v2", artifactId: plan.id, ...s })
+  expect((await store.get(plan.id))!.completed).toBe(true)
+  expect(store.getActivePlan("s1")).toBeUndefined()
+
+  // resubmit clears completion and re-enters review → active again.
+  const { artifact: re } = await store.publish({ type: "plan", title: "P", content: "v3", artifactId: plan.id, resubmit: true, ...s })
+  expect(re.completed).toBe(false)
+  expect(re.status).toBe("awaiting_review")
+  expect(store.getActivePlan("s1")!.id).toBe(plan.id)
+})
+
+test("a phase report (parentId) does NOT complete its phase plan", async () => {
+  const store = newStore()
+  const s = { sessionID: "s1" }
+  const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r", isRoadmap: true, ...s })
+  await store.resolveVerdict(road.id, { status: "approved" })
+  const { artifact: phase } = await store.publish({ type: "plan", title: "P1", content: "p", parentId: road.id, ...s })
+  await store.resolveVerdict(phase.id, { status: "approved" })
+  expect(store.getActivePlan("s1")!.id).toBe(phase.id)
+
+  // A report carrying the roadmap parentId is a milestone, not a completion.
+  await store.publish({ type: "report", title: "PR", content: "x", parentId: road.id, ...s })
+  expect((await store.get(phase.id))!.completed).toBeFalsy()
+  expect(store.getActivePlan("s1")!.id).toBe(phase.id)
+})
+
+test("a report with no active plan is a no-op; multiple reports are idempotent", async () => {
+  const store = newStore()
+  const s = { sessionID: "s1" }
+  // No plan in the session → nothing to complete.
+  await store.publish({ type: "report", title: "R1", content: "a", ...s })
+  expect(store.getLastCompletedPlan("s1")).toBeUndefined()
+
+  const { artifact: plan } = await store.publish({ type: "plan", title: "P", content: "v1", ...s })
+  await store.resolveVerdict(plan.id, { status: "approved" })
+  await store.publish({ type: "report", title: "R2", content: "b", ...s })
+  // Second report finds no active plan → still just the one completed plan.
+  await store.publish({ type: "report", title: "R3", content: "c", ...s })
+  expect((await store.get(plan.id))!.completed).toBe(true)
+  expect(store.getActivePlan("s1")).toBeUndefined()
+})
+
 test("re-publishing an approved plan stays approved (progress update); resubmit re-opens review", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })

@@ -167,7 +167,10 @@ export type GateState = "open" | "closed"
  * approved before editing, so an approved roadmap keeps the gate closed.
  */
 export function gateState(plan: Artifact | undefined): GateState {
-  if (!plan || plan.isRoadmap) return "closed"
+  // A completed plan (a report marked its work done) never opens the gate; the
+  // live path already excludes it via getActivePlan, this keeps gateState
+  // self-describing for direct callers.
+  if (!plan || plan.isRoadmap || plan.completed) return "closed"
   return plan.status === "approved" ? "open" : "closed"
 }
 
@@ -205,7 +208,10 @@ companion. This is enforced by the runtime, not optional:
    change the plan's scope or approach and want a fresh review.
 4. REPORT. When the planned work is complete, publish a report with
    \`publish_artifact(type: "report", ...)\` summarizing what was done and what
-   was not.
+   was not. Publishing a report COMPLETES the current plan and RE-CLOSES the edit
+   gate — file edits are blocked again afterward. (A report on a roadmap phase,
+   i.e. with a \`parentId\`, is a phase milestone and does NOT complete the
+   roadmap; continue to the next phase.)
 
 Standard plan structure — every plan MUST contain these \`##\` sections:
 Context/Analysis, Goals, Approach, Tasks (or Steps), Verification, Status.
@@ -243,8 +249,11 @@ current state — mark tasks done, edit the Status section. Never append
 "RESOLVED: ..." notes or leave stale text; a plan must always read as the single
 current source of truth.
 
-For a brand-new implementation request later in the session, publish a FRESH plan
-(or roadmap) rather than reusing an already-approved one.`
+After a report completes a plan, any further edits require a FRESH plan for the
+new work — or, to continue the same plan, re-publish it with \`resubmit: true\`
+for a fresh approval. A normal progress-update re-publish does NOT reopen the
+gate. For a brand-new implementation request later in the session, always publish
+a FRESH plan (or roadmap) rather than reusing an already-approved one.`
 }
 
 /**

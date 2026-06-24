@@ -100,6 +100,19 @@ test("gate allows mutating tools once the session's plan is approved", async () 
   await hooks.dispose?.()
 })
 
+test("gate blocks after a report completed the plan, with a 'completed by a report' reason", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "proj-"))
+  // A plan that was approved then completed by a report → gate re-closed.
+  seedArtifact(dir, { ...PLAN, status: "approved", completed: true }, "# P\n## Context\nc")
+  const hooks = await init(dir)
+  const call = hooks["tool.execute.before"]!(
+    { tool: "edit", sessionID: "s1", callID: "c1" } as any,
+    { args: {} } as any,
+  )
+  await expect(call).rejects.toThrow(/completed by a report/)
+  await hooks.dispose?.()
+})
+
 test("system.transform injects the contract and the active plan content", async () => {
   const dir = mkdtempSync(join(tmpdir(), "proj-"))
   seedArtifact(dir, { ...PLAN, status: "approved" }, "PLAN-BODY-MARKER")

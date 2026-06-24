@@ -88,6 +88,10 @@ export function createStore(opts: StoreOptions) {
         title: input.title,
         status,
         updatedAt: now,
+        // A fresh review (resubmit) clears completion so this plan governs the
+        // gate again; a normal progress update keeps `completed` (a completed
+        // plan must NOT silently reopen the gate via a Status/checkbox edit).
+        completed: input.resubmit ? false : existing.completed,
       }
     } else {
       const status = input.type === "plan" ? planStatus : "published"
@@ -127,6 +131,25 @@ export function createStore(opts: StoreOptions) {
     artifacts.set(next.id, next)
     if (isNew) comments.set(next.id, [])
     else if (resolvedComments) comments.set(next.id, resolvedComments)
+
+    // Publishing a report COMPLETES the session's active standalone plan: the
+    // planned work is reported done, so the gate re-closes and new work needs a
+    // fresh plan. Scoped to standalone plans (no parentId) — a phase report is a
+    // mid-roadmap milestone and must not complete its phase plan (the roadmap
+    // cadence re-closes the gate when the next phase is submitted). Done after
+    // the report's I/O so a failed write leaves no dangling completion; and
+    // WITHOUT bumping updatedAt (completion is not a content edit — mirrors
+    // setArchived — and a completed plan is excluded from ordering anyway).
+    if (next.type === "report" && input.sessionID) {
+      const active = getActivePlan(input.sessionID)
+      if (active && !active.parentId) {
+        const live = artifacts.get(active.id)
+        if (live) {
+          live.completed = true
+          await persistMeta(live)
+        }
+      }
+    }
     return { artifact: { ...next } }
   }
 
@@ -257,14 +280,31 @@ export function createStore(opts: StoreOptions) {
     // updating a roadmap's Status (a progress update) can't flip it to "active"
     // and close the gate mid-phase; drafts are excluded as not-yet-submitted.
     // Ordering by updatedAt means the phase currently submitted/approved is
-    // active even when later-created phase drafts already exist.
+    // active even when later-created phase drafts already exist. Completed plans
+    // (a report marked the work done) are excluded so the gate re-closes until a
+    // fresh plan is published or the plan is resubmitted.
     let active: Artifact | undefined
     for (const a of artifacts.values()) {
       if (a.type !== "plan" || a.sessionID !== sessionID) continue
-      if (a.status === "draft" || a.isRoadmap || a.archived) continue
+      if (a.status === "draft" || a.isRoadmap || a.archived || a.completed) continue
       if (!active || a.updatedAt > active.updatedAt) active = a
     }
     return active ? { ...active } : undefined
+  }
+
+  /**
+   * The session's most recently completed (report-finished), non-roadmap plan,
+   * if any. Used only to craft an accurate gate blocked-reason after a report
+   * has completed the active plan (which getActivePlan then excludes).
+   */
+  function getLastCompletedPlan(sessionID: string): Artifact | undefined {
+    let last: Artifact | undefined
+    for (const a of artifacts.values()) {
+      if (a.type !== "plan" || a.sessionID !== sessionID) continue
+      if (!a.completed || a.isRoadmap || a.archived) continue
+      if (!last || a.updatedAt > last.updatedAt) last = a
+    }
+    return last ? { ...last } : undefined
   }
 
   /** The session's roadmap (most recently updated isRoadmap plan), if any. */
@@ -311,7 +351,7 @@ export function createStore(opts: StoreOptions) {
     publish, readRevision, addComment, getComments,
     awaitVerdict, resolveVerdict, disposeAll, get, list, load,
     setArchived, remove,
-    getActivePlan, getRoadmap, getChildren,
+    getActivePlan, getLastCompletedPlan, getRoadmap, getChildren,
     hasPending: (id: string) => pending.has(id),
   }
 }

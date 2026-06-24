@@ -121,6 +121,7 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
       const plan = store.getActivePlan(input.sessionID)
       if (gateState(plan) === "open") return
       const roadmap = store.getRoadmap(input.sessionID)
+      const lastCompleted = store.getLastCompletedPlan(input.sessionID)
       let reason: string
       if (plan) {
         reason = `the active plan "${plan.title}" is ${plan.status}`
@@ -129,6 +130,12 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
         reason =
           `the roadmap "${roadmap.title}" is approved but no phase plan is yet ` +
           `approved — approving a roadmap does NOT unblock edits`
+      } else if (lastCompleted) {
+        // A report completed the previous plan, re-closing the gate for new work.
+        reason =
+          `the previous plan "${lastCompleted.title}" was completed by a report. ` +
+          `Publish a FRESH plan for the new work (or resubmit the completed plan ` +
+          `with publish_artifact(type:"plan", artifactId:"${lastCompleted.id}", resubmit:true))`
       } else {
         reason = "no plan has been published"
       }
