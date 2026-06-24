@@ -131,6 +131,8 @@ test("gateState is open only when the active plan is an approved non-roadmap pla
   expect(gateState(plan("approved", { isRoadmap: true }))).toBe("closed")
   // A draft never unblocks edits.
   expect(gateState(plan("draft"))).toBe("closed")
+  // A plan completed by a report never unblocks edits, even though it's approved.
+  expect(gateState(plan("approved", { completed: true }))).toBe("closed")
 })
 
 test("buildRoadmapContext enumerates phases with their statuses and progress", () => {

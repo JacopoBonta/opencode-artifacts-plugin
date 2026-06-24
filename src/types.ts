@@ -43,6 +43,13 @@ export interface Artifact {
   isRoadmap?: boolean
   /** hidden from the main companion view; only archived artifacts may be deleted */
   archived?: boolean
+  /**
+   * true when a report has marked this (standalone) plan's work complete. A
+   * completed plan no longer governs the edit gate (it's excluded from
+   * getActivePlan), so the gate re-closes and new work needs a fresh plan.
+   * Cleared by resubmitting the plan for a fresh review.
+   */
+  completed?: boolean
 }
 
 export type Verdict =
