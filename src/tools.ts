@@ -94,6 +94,7 @@ export function createPublishTool(deps: ToolDeps) {
         content: args.content,
         artifactId: args.artifactId,
         sessionID,
+        agent: context.agent,
         parentId: args.parentId,
         isRoadmap: args.type === "plan" ? args.roadmap : undefined,
         draft: args.type === "plan" ? args.draft : undefined,

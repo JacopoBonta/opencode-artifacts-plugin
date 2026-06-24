@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from "react"
 import Markdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import type { Anchor, Comment } from "../api"
 import { anchorFromOffsets, selectionOffsets, findAnchorOffsets } from "../anchor-dom"
 import { flashElement } from "../flash"
@@ -87,7 +88,7 @@ export function ArtifactView(props: {
 
   return (
     <div className="artifact-view" ref={ref} onMouseUp={onMouseUp} onClick={onClick}>
-      <Markdown>{props.content}</Markdown>
+      <Markdown remarkPlugins={[remarkGfm]}>{props.content}</Markdown>
     </div>
   )
 }

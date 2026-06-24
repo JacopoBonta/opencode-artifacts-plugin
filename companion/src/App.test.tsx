@@ -135,6 +135,25 @@ test("a draft phase is commentable but not approvable, and shows the draft banne
   expect(screen.getByText(/draft — the agent will submit/i)).toBeInTheDocument()
 })
 
+test("the header shows the creating agent's name when present", async () => {
+  vi.mocked(api.getArtifact).mockResolvedValue({
+    artifact: { id: "id1", type: "plan", title: "P", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 0, agent: "build" },
+    content: "# Plan Body", comments: [],
+  })
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "Plan Body" }))
+  expect(screen.getByText("by build")).toBeInTheDocument()
+})
+
+test("the reading-width toggle flips the documentElement dataset", async () => {
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "Plan" }))
+  const toggle = screen.getByRole("button", { name: /toggle reading width/i })
+  const before = document.documentElement.dataset.reading
+  await userEvent.click(toggle)
+  expect(document.documentElement.dataset.reading).not.toBe(before)
+})
+
 test("the left rail shows a theme toggle that flips the theme", async () => {
   localStorage.clear()
   document.documentElement.dataset.theme = "dark"

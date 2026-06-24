@@ -35,6 +35,8 @@ export interface Artifact {
   updatedAt: number
   /** opencode session that published this artifact, for report refinement */
   sessionID?: string
+  /** name of the agent that created this artifact */
+  agent?: string
   /** roadmap plan this artifact belongs to (set on phase plans + phase reports) */
   parentId?: string
   /** true when this plan is a decomposition overview rather than an editable plan */
