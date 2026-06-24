@@ -143,6 +143,34 @@ export function createServer(opts: ServerOptions) {
         return json({ ok: true })
       }
 
+      const archiveMatch = path.match(/^\/api\/artifacts\/([^/]+)\/archive$/)
+      if (archiveMatch && req.method === "POST") {
+        const id = archiveMatch[1]
+        if (!safeId(id)) return json({ error: "not found" }, 404)
+        let b: any
+        try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
+        try {
+          await store.setArchived(id, b.archived === true)
+        } catch {
+          return json({ error: "unknown artifact" }, 404)
+        }
+        events.broadcast({ type: "artifact.archived", id })
+        return json({ ok: true })
+      }
+
+      const deleteMatch = path.match(/^\/api\/artifacts\/([^/]+)$/)
+      if (deleteMatch && req.method === "DELETE") {
+        const id = deleteMatch[1]
+        if (!safeId(id)) return json({ error: "not found" }, 404)
+        const da = await store.get(id)
+        if (!da) return json({ error: "not found" }, 404)
+        // Only archived artifacts may be deleted.
+        if (!da.archived) return json({ error: "archive before deleting" }, 409)
+        await store.remove(id)
+        events.broadcast({ type: "artifact.deleted", id })
+        return json({ ok: true })
+      }
+
       // --- static companion ---
       if (staticDir && !path.startsWith("/api/")) {
         const rel = path === "/" ? "index.html" : path.slice(1)

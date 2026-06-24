@@ -1,6 +1,8 @@
 export type ServerEvent =
   | { type: "artifact.published"; id: string }
   | { type: "artifact.updated"; id: string }
+  | { type: "artifact.archived"; id: string }
+  | { type: "artifact.deleted"; id: string }
   | { type: "comment.added"; id: string }
   | { type: "ping" }
 

@@ -7,7 +7,7 @@ export interface Artifact {
   id: string; type: "plan" | "report"; title: string
   status: string; currentRevision: number; createdAt: number; updatedAt: number
   sessionID?: string; sessionTitle?: string
-  parentId?: string; isRoadmap?: boolean; agent?: string
+  parentId?: string; isRoadmap?: boolean; agent?: string; archived?: boolean
 }
 export interface ArtifactDetail { artifact: Artifact; content: string; comments: Comment[] }
 
@@ -37,6 +37,12 @@ export async function postVerdict(
   status: "approved" | "changes_requested",
 ): Promise<void> {
   await fetch(`/api/artifacts/${id}/verdict`, jsonPost({ status }))
+}
+export async function setArchived(id: string, archived: boolean): Promise<void> {
+  await fetch(`/api/artifacts/${id}/archive`, jsonPost({ archived }))
+}
+export async function deleteArtifact(id: string): Promise<void> {
+  await fetch(`/api/artifacts/${id}`, { method: "DELETE" })
 }
 export function subscribeEvents(
   onEvent: (e: any) => void,

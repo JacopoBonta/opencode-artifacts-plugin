@@ -51,6 +51,9 @@ export function App() {
         setConnected(true)
         if (e.type === "ping") return
         refreshList()
+        // A deletion may remove the selected artifact; the membership effect
+        // clears the selection once the refreshed list arrives.
+        if (e.type === "artifact.deleted") return
         if (selectedId && e.id === selectedId) {
           // A new revision may have arrived — return to the latest view.
           setViewedRevision(undefined)
@@ -62,10 +65,35 @@ export function App() {
     )
   }, [selectedId, refreshList, refreshDetail])
 
-  // Auto-select the first artifact once the list loads and nothing is selected.
+  // Auto-select the first non-archived artifact once the list loads and nothing
+  // is selected (fall back to the first artifact if all are archived).
   useEffect(() => {
-    if (!selectedId && artifacts.length) select(artifacts[0].id)
+    if (!selectedId && artifacts.length) {
+      const first = artifacts.find((a) => !a.archived) ?? artifacts[0]
+      select(first.id)
+    }
   }, [artifacts, selectedId, select])
+
+  // Clear the selection when the selected artifact is gone (e.g. deleted).
+  useEffect(() => {
+    if (selectedId && artifacts.length && !artifacts.some((a) => a.id === selectedId)) {
+      setSelectedId(undefined)
+      setDetail(undefined)
+    }
+  }, [artifacts, selectedId])
+
+  async function archive(id: string) {
+    await api.setArchived(id, true)
+    refreshList()
+  }
+  async function unarchive(id: string) {
+    await api.setArchived(id, false)
+    refreshList()
+  }
+  async function remove(id: string) {
+    await api.deleteArtifact(id)
+    refreshList()
+  }
 
   const pickRevision = useCallback(async (n: number) => {
     if (!detail) return
@@ -143,7 +171,13 @@ export function App() {
             <ThemeToggle />
           </div>
         </div>
-        <ArtifactList artifacts={artifacts} selectedId={selectedId} onSelect={select} />
+        <ArtifactList
+          artifacts={artifacts}
+          selectedId={selectedId}
+          onSelect={select}
+          onUnarchive={unarchive}
+          onDelete={remove}
+        />
       </aside>
       <main className="main">
         {detail ? (
@@ -157,6 +191,16 @@ export function App() {
               </div>
               <div className="main-header-right">
                 <RevisionSwitcher total={total} viewing={viewing} onSelect={pickRevision} />
+                {!detail.artifact.parentId && !detail.artifact.archived && (
+                  <button
+                    type="button"
+                    className="archive-btn"
+                    title="Archive — hide from the main view"
+                    onClick={() => archive(detail.artifact.id)}
+                  >
+                    Archive
+                  </button>
+                )}
                 <span className={`status status-${detail.artifact.status}`}>
                   {detail.artifact.status.replace(/_/g, " ")}
                 </span>
