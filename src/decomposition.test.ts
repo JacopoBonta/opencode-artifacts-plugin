@@ -80,8 +80,10 @@ test("full roadmap -> phase -> report decomposition drives the gate correctly", 
   expect(gate(store)).toBe("closed")
 
   // 1. Roadmap approved → still blocked (decomposition agreed, not "go edit").
+  //    A roadmap is never the gate-governing "active plan".
   await publishAndApprove(store, tool, { type: "plan", title: "R", content: ROADMAP, roadmap: true }, "id1")
-  expect(store.getActivePlan("s1")!.isRoadmap).toBe(true)
+  expect(store.getActivePlan("s1")).toBeUndefined()
+  expect(store.getRoadmap("s1")!.id).toBe("id1")
   expect(gate(store)).toBe("closed")
 
   // 2. Phase 1 plan (child of the roadmap) approved → edits UNBLOCKED.
@@ -138,7 +140,7 @@ test("scratch-upfront variant: drafts created first, then submitted per phase", 
   expect(d2.status).toBe("draft")
   expect(store.getChildren("id1").map((c) => c.id)).toEqual(["id2", "id3"])
   expect(gate(store)).toBe("closed")
-  expect(store.getActivePlan("s1")!.id).toBe("id1") // roadmap, not a draft
+  expect(store.getActivePlan("s1")).toBeUndefined() // roadmap + drafts excluded
 
   // 3. Submit phase 1 (re-publish its draft WITHOUT draft) → blocks → approve → open.
   const submit = tool.execute(

@@ -135,9 +135,17 @@ export const GATED_TOOLS = new Set(["write", "edit", "patch"])
  * can't gate it wholesale without blocking read-only exploration (grep, ls,
  * git status, running tests) the agent needs while planning. Instead we gate
  * only commands that look like they change the workspace.
+ *
+ * Notable non-matches (so they aren't gated):
+ *  - fd redirects / dups: `2>&1`, `2>/dev/null` (the `>` is preceded by a digit)
+ *  - the `->` that shows up in commit messages and prose (preceded by `-`)
+ *  - VCS bookkeeping that doesn't touch the working tree: `git add`, `commit`,
+ *    `push`, `status`, `diff`, `log`. Only git subcommands that CAN change
+ *    working-tree files are gated (checkout/switch/apply/reset/...).
+ * A file-writing redirect (`> file`, `>> file`) IS matched.
  */
 export const MUTATING_BASH_RE =
-  /(^|[\s;&|])(rm|mv|cp|mkdir|rmdir|touch|truncate|dd|tee|chmod|chown|ln)\s|>>?|(^|[\s;&|])sed\s+[^|]*-i|(^|[\s;&|])(npm|pnpm|yarn|bun|pip|cargo|go|brew)\s+(i|install|add|remove|rm|uninstall)\b|(^|[\s;&|])git\s+(commit|checkout|switch|apply|reset|restore|merge|rebase|push|stash|clean|rm|mv)\b/
+  /(^|[\s;&|])(rm|mv|cp|mkdir|rmdir|touch|truncate|dd|tee|chmod|chown|ln)\s|(?<![\d&>\-])>>?\s*[^\s&|]|(^|[\s;&|])sed\s+[^|]*-i|(^|[\s;&|])(npm|pnpm|yarn|bun|pip|cargo|go|brew)\s+(i|install|add|remove|rm|uninstall)\b|(^|[\s;&|])git\s+(checkout|switch|apply|reset|restore|merge|rebase|stash|clean|rm|mv)\b/
 
 /** Does this tool call mutate the workspace (and thus require an approved plan)? */
 export function isMutatingCall(toolName: string, args: unknown): boolean {

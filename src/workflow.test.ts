@@ -89,14 +89,30 @@ test("isMutatingCall ignores read-only tools", () => {
 test("isMutatingCall classifies bash by command content", () => {
   expect(isMutatingCall("bash", { command: "rm -rf build" })).toBe(true)
   expect(isMutatingCall("bash", { command: "echo hi > file.txt" })).toBe(true)
+  expect(isMutatingCall("bash", { command: "echo hi >> file.txt" })).toBe(true)
   expect(isMutatingCall("bash", { command: "sed -i 's/a/b/' f" })).toBe(true)
-  expect(isMutatingCall("bash", { command: "git commit -m x" })).toBe(true)
   expect(isMutatingCall("bash", { command: "npm install lodash" })).toBe(true)
+  // working-tree-mutating git subcommands are still gated
+  expect(isMutatingCall("bash", { command: "git checkout ." })).toBe(true)
+  expect(isMutatingCall("bash", { command: "git reset --hard" })).toBe(true)
 
   expect(isMutatingCall("bash", { command: "ls -la" })).toBe(false)
   expect(isMutatingCall("bash", { command: "grep -r foo src" })).toBe(false)
   expect(isMutatingCall("bash", { command: "git status" })).toBe(false)
   expect(isMutatingCall("bash", {})).toBe(false)
+})
+
+test("isMutatingCall does not flag git bookkeeping, fd redirects, or '->' in messages", () => {
+  // VCS commands that don't touch the working tree
+  expect(isMutatingCall("bash", { command: "git add file.tsx" })).toBe(false)
+  expect(isMutatingCall("bash", { command: "git -c core.hooksPath=/dev/null add f 2>&1" })).toBe(false)
+  expect(isMutatingCall("bash", { command: 'git commit -m "create -> challenge -> done"' })).toBe(false)
+  expect(isMutatingCall("bash", { command: "git push origin main" })).toBe(false)
+  // fd redirects / dups are not file writes
+  expect(isMutatingCall("bash", { command: "ls 2>&1" })).toBe(false)
+  expect(isMutatingCall("bash", { command: "cat f 2>/dev/null" })).toBe(false)
+  // a genuine file-writing redirect still IS gated
+  expect(isMutatingCall("bash", { command: "echo x > f.txt" })).toBe(true)
 })
 
 function plan(status: Artifact["status"], extra: Partial<Artifact> = {}): Artifact {

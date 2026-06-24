@@ -12,7 +12,6 @@ import {
   buildWorkflowContract,
   buildSessionContext,
   buildRoadmapContext,
-  buildPhaseList,
 } from "./workflow"
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -69,29 +68,28 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
   // the parent roadmap (with phase progress) when the active plan is a phase.
   // Shared by system.transform and the compaction hook.
   async function planContextBlocks(sessionID: string): Promise<string[]> {
-    const plan = store.getActivePlan(sessionID)
-    if (!plan) return []
     const blocks: string[] = []
-    try {
-      const content = await store.readRevision(plan.id, plan.currentRevision)
-      blocks.push(buildSessionContext(plan, content))
-    } catch {
-      return blocks
+    // The active (non-roadmap) plan governing the gate, if any.
+    const plan = store.getActivePlan(sessionID)
+    if (plan) {
+      try {
+        const content = await store.readRevision(plan.id, plan.currentRevision)
+        blocks.push(buildSessionContext(plan, content))
+      } catch {
+        // active plan content unreadable — fall through to the roadmap block
+      }
     }
-    if (plan.isRoadmap) {
-      // Active plan IS the roadmap (e.g. right after scratching, before the
-      // first phase is submitted): its content is already shown above, so just
-      // enumerate the scratched phases.
-      blocks.push(buildPhaseList(store.getChildren(plan.id)))
-    } else if (plan.parentId) {
-      const roadmap = await store.get(plan.parentId)
-      if (roadmap) {
-        try {
-          const rmContent = await store.readRevision(roadmap.id, roadmap.currentRevision)
-          blocks.push(buildRoadmapContext(roadmap, rmContent, store.getChildren(roadmap.id)))
-        } catch {
-          // roadmap content unreadable — the active plan block still stands
-        }
+    // Inject the roadmap (with its phase list) independently of gate state: when
+    // the active plan is a phase, OR when only a roadmap exists yet (no phase
+    // submitted). A standalone plan (no parent, no roadmap) gets no roadmap block.
+    const roadmap =
+      plan?.parentId ? await store.get(plan.parentId) : plan ? undefined : store.getRoadmap(sessionID)
+    if (roadmap) {
+      try {
+        const rmContent = await store.readRevision(roadmap.id, roadmap.currentRevision)
+        blocks.push(buildRoadmapContext(roadmap, rmContent, store.getChildren(roadmap.id)))
+      } catch {
+        // roadmap content unreadable — the active plan block still stands
       }
     }
     return blocks
@@ -107,12 +105,24 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
       if (!isMutatingCall(input.tool, output.args)) return
       const plan = store.getActivePlan(input.sessionID)
       if (gateState(plan) === "open") return
-      const status = plan ? `plan "${plan.title}" is ${plan.status}` : "no plan has been published"
+      const roadmap = store.getRoadmap(input.sessionID)
+      let reason: string
+      if (plan) {
+        reason = `the active plan "${plan.title}" is ${plan.status}`
+      } else if (roadmap) {
+        // A roadmap is approved but no phase plan is yet approved/active.
+        reason =
+          `the roadmap "${roadmap.title}" is approved but no phase plan is yet ` +
+          `approved — approving a roadmap does NOT unblock edits`
+      } else {
+        reason = "no plan has been published"
+      }
       throw new Error(
-        `Workflow gate: file edits are blocked because ${status}. Publish a plan ` +
-          `with publish_artifact(type:"plan", ...) and get it approved in the ` +
-          `companion before editing. If a plan exists with requested changes, ` +
-          `revise it (same artifactId) and re-publish until approved.`,
+        `Workflow gate: file edits are blocked because ${reason}. Publish a plan ` +
+          `(or, for a roadmap, the next phase plan) with publish_artifact(type:"plan", ...) ` +
+          `and get it approved in the companion before editing. On changes_requested, ` +
+          `revise the same artifactId and re-publish until approved. Note: git add/commit/push ` +
+          `and read-only commands are not gated.`,
       )
     },
 
