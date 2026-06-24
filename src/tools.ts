@@ -40,7 +40,12 @@ export function createPublishTool(deps: ToolDeps) {
       "edits), implement, then publish a results report with the same parentId. " +
       "Drafts must already contain all required sections. " +
       "Across revisions, update sections IN PLACE to reflect the current state — " +
-      "never append 'RESOLVED:' notes.",
+      "never append 'RESOLVED:' notes. " +
+      "While implementing, keep the plan's Status section and task checkboxes " +
+      "current by re-publishing the approved plan (same artifactId): re-publishing " +
+      "an APPROVED plan is a non-blocking progress update that stays approved and " +
+      "returns immediately — it does NOT require re-approval. Set resubmit=true " +
+      "only when you change the plan's scope/approach and want a fresh review.",
     args: {
       type: tool.schema.enum(["plan", "report"]).describe("plan gates the work; report is informational"),
       title: tool.schema.string().describe("short artifact title"),
@@ -61,6 +66,10 @@ export function createPublishTool(deps: ToolDeps) {
         .boolean()
         .optional()
         .describe("scratch a phase plan as a non-blocking draft; re-publish without draft to submit it for review"),
+      resubmit: tool.schema
+        .boolean()
+        .optional()
+        .describe("force a fresh review of an already-approved plan (instead of a non-blocking progress update)"),
     },
     async execute(args, context) {
       const sessionID = context.sessionID
@@ -79,7 +88,6 @@ export function createPublishTool(deps: ToolDeps) {
         }
       }
 
-      const isDraft = args.type === "plan" && !!args.draft
       const { artifact } = await store.publish({
         type: args.type,
         title: args.title,
@@ -88,7 +96,8 @@ export function createPublishTool(deps: ToolDeps) {
         sessionID,
         parentId: args.parentId,
         isRoadmap: args.type === "plan" ? args.roadmap : undefined,
-        draft: isDraft,
+        draft: args.type === "plan" ? args.draft : undefined,
+        resubmit: args.resubmit,
       })
       const artifactUrl = `${url}/artifacts/${artifact.id}`
       events.broadcast({ type: "artifact.published", id: artifact.id })
@@ -99,9 +108,21 @@ export function createPublishTool(deps: ToolDeps) {
       }
 
       // A draft is non-blocking — it is scratched, not yet submitted for review.
-      if (isDraft) {
+      if (artifact.status === "draft") {
         notify(`Phase draft saved: ${artifact.title}`, artifactUrl)
         return JSON.stringify({ artifactId: artifact.id, status: "draft", url: artifactUrl })
+      }
+
+      // Re-publishing an already-approved plan is a non-blocking progress update
+      // (Status/checkboxes) — it stays approved and never re-prompts for review.
+      if (artifact.status === "approved") {
+        notify(`Plan progress updated: ${artifact.title}`, artifactUrl)
+        return JSON.stringify({
+          status: "approved",
+          artifactId: artifact.id,
+          revision: artifact.currentRevision,
+          progress: true,
+        })
       }
 
       notify(`Plan awaiting review: ${artifact.title}`, artifactUrl)
