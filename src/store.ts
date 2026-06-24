@@ -15,6 +15,8 @@ export interface PublishInput {
   content: string
   artifactId?: string
   sessionID?: string
+  /** name of the agent that created this artifact */
+  agent?: string
   /** roadmap this artifact belongs to (phase plans + phase reports) */
   parentId?: string
   /** mark a plan as a decomposition overview */
@@ -98,6 +100,7 @@ export function createStore(opts: StoreOptions) {
         createdAt: now,
         updatedAt: now,
         sessionID: input.sessionID,
+        agent: input.agent,
         parentId: input.parentId,
         isRoadmap: input.isRoadmap,
       }

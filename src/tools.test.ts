@@ -219,3 +219,12 @@ test("report carries parentId through to the store", async () => {
   )
   expect((await store.get("id1"))!.parentId).toBe("road1")
 })
+
+test("the creating agent name is persisted on the artifact", async () => {
+  const { tool, store } = setup()
+  await tool.execute(
+    { type: "report", title: "R", content: "done" },
+    { sessionID: "s1", agent: "build" } as any,
+  )
+  expect((await store.get("id1"))!.agent).toBe("build")
+})

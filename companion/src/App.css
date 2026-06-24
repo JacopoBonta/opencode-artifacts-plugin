@@ -75,8 +75,15 @@ button { font-family: inherit; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 /* layout */
-.layout { display: grid; grid-template-columns: 264px 1fr 340px; height: 100vh; background: var(--bg); }
+.layout { position: relative; display: grid; grid-template-columns: var(--rail-left, 264px) 1fr var(--rail-right, 340px); height: 100vh; background: var(--bg); }
 .rail { background: var(--surface); border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; }
+
+/* drag-to-resize handles at the rail boundaries (overlay the borders) */
+.rail-resize { position: absolute; top: 0; bottom: 0; width: 7px; transform: translateX(-50%); cursor: col-resize; z-index: 5; touch-action: none; }
+.rail-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%); background: transparent; transition: background 0.15s; }
+.rail-resize:hover::after, .rail-resize:active::after { background: var(--accent); width: 2px; }
+.rail-resize-left { left: var(--rail-left, 264px); }
+.rail-resize-right { right: var(--rail-right, 340px); transform: translateX(50%); }
 .comments-rail { border-right: none; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
 .main { padding: 28px 32px; overflow-y: auto; }
 
@@ -108,7 +115,9 @@ button { font-family: inherit; }
 /* main header */
 .main-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .main-header h1 { margin: 0; font-size: 20px; font-weight: 650; }
-.main-header-right { display: flex; align-items: center; gap: 12px; }
+.main-header-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.main-subtitle { font-size: 12px; color: var(--text-muted); }
+.main-header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .revision-switcher { font-size: 12px; padding: 5px 8px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
 
 /* banners */
@@ -118,8 +127,11 @@ button { font-family: inherit; }
 .draft-banner { margin-top: auto; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--info-bg); color: var(--info-fg); font-size: 12.5px; }
 .conn-lost { grid-column: 1 / -1; padding: 8px 16px; background: var(--warn-bg); color: var(--warn-fg); border-bottom: 1px solid var(--border); font-size: 12.5px; }
 
+/* reading width: comfortable (default) centers the main column; stretched fills it */
+.main > * { max-width: 820px; margin-inline: auto; }
+[data-reading="stretched"] .main > * { max-width: none; margin-inline: 0; }
+
 /* rendered markdown */
-.artifact-view { max-width: 760px; }
 .artifact-view ::selection { background: var(--highlight-bg); }
 .artifact-view h1, .artifact-view h2, .artifact-view h3 { font-weight: 650; line-height: 1.3; margin: 1.4em 0 0.5em; }
 .artifact-view h1 { font-size: 22px; }
@@ -131,8 +143,14 @@ button { font-family: inherit; }
 .artifact-view pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; overflow-x: auto; }
 .artifact-view pre code { background: none; border: none; padding: 0; }
 .artifact-view blockquote { margin: 1em 0; padding: 4px 14px; border-left: 3px solid var(--border); color: var(--text-muted); }
-.artifact-view table { border-collapse: collapse; }
-.artifact-view th, .artifact-view td { border: 1px solid var(--border); padding: 6px 10px; }
+.artifact-view table { border-collapse: collapse; display: block; width: max-content; max-width: 100%; overflow-x: auto; margin: 1em 0; }
+.artifact-view th, .artifact-view td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.artifact-view th { background: var(--surface-2); font-weight: 650; }
+.artifact-view tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
+/* GFM task lists */
+.artifact-view ul.contains-task-list { list-style: none; padding-left: 1em; }
+.artifact-view li.task-list-item { list-style: none; }
+.artifact-view li.task-list-item input { margin-right: 0.5em; }
 mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-radius: 3px; padding: 0 1px; cursor: pointer; }
 
 /* comments */

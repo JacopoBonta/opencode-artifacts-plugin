@@ -7,7 +7,7 @@ export interface Artifact {
   id: string; type: "plan" | "report"; title: string
   status: string; currentRevision: number; createdAt: number; updatedAt: number
   sessionID?: string; sessionTitle?: string
-  parentId?: string; isRoadmap?: boolean
+  parentId?: string; isRoadmap?: boolean; agent?: string
 }
 export interface ArtifactDetail { artifact: Artifact; content: string; comments: Comment[] }
 

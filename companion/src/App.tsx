@@ -8,8 +8,15 @@ import { CommentThread } from "./components/CommentThread"
 import { ActionBar } from "./components/ActionBar"
 import { RevisionSwitcher } from "./components/RevisionSwitcher"
 import { ThemeToggle } from "./components/ThemeToggle"
+import { ReadingWidthToggle } from "./components/ReadingWidthToggle"
+import { ResizeHandle } from "./components/ResizeHandle"
+import {
+  getRailLeft, getRailRight, setRailLeft, setRailRight, clampLeft, clampRight,
+} from "./layoutPrefs"
 
 export function App() {
+  const [railLeft, setRailLeftW] = useState(getRailLeft)
+  const [railRight, setRailRightW] = useState(getRailRight)
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
   const [selectedId, setSelectedId] = useState<string>()
   const [detail, setDetail] = useState<ArtifactDetail>()
@@ -109,10 +116,25 @@ export function App() {
     : []
 
   return (
-    <div className="layout">
+    <div
+      className="layout"
+      style={{ "--rail-left": `${railLeft}px`, "--rail-right": `${railRight}px` } as React.CSSProperties}
+    >
       {!connected && (
         <div className="conn-lost">Connection lost — reconnecting…</div>
       )}
+      <ResizeHandle
+        side="left"
+        width={railLeft}
+        onResize={(w) => setRailLeftW(clampLeft(w))}
+        onCommit={(w) => setRailLeft(w)}
+      />
+      <ResizeHandle
+        side="right"
+        width={railRight}
+        onResize={(w) => setRailRightW(clampRight(w))}
+        onCommit={(w) => setRailRight(w)}
+      />
       <aside className="rail">
         <div className="rail-header">
           <h2>Artifacts</h2>
@@ -124,12 +146,18 @@ export function App() {
         {detail ? (
           <>
             <header className="main-header">
-              <h1>{detail.artifact.title}</h1>
+              <div className="main-header-left">
+                <h1>{detail.artifact.title}</h1>
+                {detail.artifact.agent && (
+                  <span className="main-subtitle">by {detail.artifact.agent}</span>
+                )}
+              </div>
               <div className="main-header-right">
                 <RevisionSwitcher total={total} viewing={viewing} onSelect={pickRevision} />
                 <span className={`status status-${detail.artifact.status}`}>
                   {detail.artifact.status.replace(/_/g, " ")}
                 </span>
+                <ReadingWidthToggle />
               </div>
             </header>
             {!isLatest && (
