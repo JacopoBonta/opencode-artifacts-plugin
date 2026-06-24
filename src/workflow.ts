@@ -190,7 +190,11 @@ companion. This is enforced by the runtime, not optional:
    On changes_requested, revise the SAME artifact (pass its artifactId) and
    re-publish, looping until approved.
 3. IMPLEMENT THE PLAN. Once approved, edits are unblocked. Follow the approved
-   plan; keep its "Status" section and task checkboxes current as you go.
+   plan; keep its "Status" section and task checkboxes current as you go by
+   re-publishing the approved plan (same artifactId). Re-publishing an approved
+   plan is a non-blocking PROGRESS UPDATE — it stays approved, returns
+   immediately, and does NOT require re-approval. Only set resubmit:true if you
+   change the plan's scope or approach and want a fresh review.
 4. REPORT. When the planned work is complete, publish a report with
    \`publish_artifact(type: "report", ...)\` summarizing what was done and what
    was not.

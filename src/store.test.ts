@@ -108,6 +108,21 @@ test("getActivePlan skips drafts and tracks the most-recently-updated non-draft 
   expect(store.getActivePlan("s1")!.id).toBe(p1.id)
 })
 
+test("re-publishing an approved plan stays approved (progress update); resubmit re-opens review", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })
+  await store.resolveVerdict(artifact.id, { status: "approved" })
+
+  // progress update: stays approved, bumps the revision, no re-review
+  const { artifact: prog } = await store.publish({ type: "plan", title: "P", content: "v2", artifactId: artifact.id })
+  expect(prog.status).toBe("approved")
+  expect(prog.currentRevision).toBe(2)
+
+  // resubmit forces a fresh review
+  const { artifact: re } = await store.publish({ type: "plan", title: "P", content: "v3", artifactId: artifact.id, resubmit: true })
+  expect(re.status).toBe("awaiting_review")
+})
+
 test("a brand-new artifact's first publish leaves its (empty) comments untouched", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })

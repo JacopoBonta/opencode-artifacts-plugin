@@ -21,6 +21,8 @@ export interface PublishInput {
   isRoadmap?: boolean
   /** scratch a plan as a non-blocking draft (not yet submitted for review) */
   draft?: boolean
+  /** force a fresh review of an already-approved plan (instead of a progress update) */
+  resubmit?: boolean
 }
 
 interface Pending {
@@ -69,8 +71,15 @@ export function createStore(opts: StoreOptions) {
       }
       wasDraft = existing.status === "draft"
       // Status follows the artifact's own type, not the (possibly mismatched)
-      // type passed on re-publish.
-      const status = existing.type === "plan" ? planStatus : "published"
+      // type passed on re-publish. Re-publishing an APPROVED plan is a
+      // non-blocking progress update that stays approved (Status/checkbox edits
+      // don't need re-approval); `resubmit` forces a fresh review instead.
+      const status =
+        existing.type !== "plan"
+          ? "published"
+          : existing.status === "approved" && !input.draft && !input.resubmit
+            ? "approved"
+            : planStatus
       next = {
         ...existing,
         currentRevision: existing.currentRevision + 1,
