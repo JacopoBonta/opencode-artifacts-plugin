@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from "bun:test"
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createStore } from "./store"
@@ -161,6 +161,81 @@ test("disposeAll rejects pending verdicts", async () => {
   const pending = store.awaitVerdict(artifact.id)
   store.disposeAll()
   await expect(pending).rejects.toThrow()
+})
+
+test("setArchived on a roadmap cascades to its children; unarchive restores them", async () => {
+  const store = newStore()
+  const s = { sessionID: "s1" }
+  const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r", isRoadmap: true, ...s })
+  const { artifact: phase } = await store.publish({ type: "plan", title: "P1", content: "p", parentId: road.id, ...s })
+  const { artifact: rep } = await store.publish({ type: "report", title: "Rep", content: "x", parentId: road.id, ...s })
+
+  const affected = await store.setArchived(road.id, true)
+  expect(affected.map((a) => a.id).sort()).toEqual([road.id, phase.id, rep.id].sort())
+  expect((await store.get(road.id))!.archived).toBe(true)
+  expect((await store.get(phase.id))!.archived).toBe(true)
+  expect((await store.get(rep.id))!.archived).toBe(true)
+
+  await store.setArchived(road.id, false)
+  expect((await store.get(road.id))!.archived).toBe(false)
+  expect((await store.get(phase.id))!.archived).toBe(false)
+})
+
+test("archived plans/roadmaps are excluded from getActivePlan/getRoadmap/getChildren", async () => {
+  const store = newStore()
+  const s = { sessionID: "s1" }
+  const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r", isRoadmap: true, ...s })
+  const { artifact: phase } = await store.publish({ type: "plan", title: "P1", content: "p", parentId: road.id, ...s })
+  await store.resolveVerdict(phase.id, { status: "approved" })
+  expect(store.getActivePlan("s1")!.id).toBe(phase.id)
+  expect(store.getRoadmap("s1")!.id).toBe(road.id)
+  expect(store.getChildren(road.id).map((c) => c.id)).toEqual([phase.id])
+
+  await store.setArchived(road.id, true) // cascades to the phase
+  expect(store.getActivePlan("s1")).toBeUndefined()
+  expect(store.getRoadmap("s1")).toBeUndefined()
+  expect(store.getChildren(road.id)).toHaveLength(0)
+})
+
+test("remove throws when the target is not archived", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  await expect(store.remove(artifact.id)).rejects.toThrow("not archived")
+})
+
+test("remove deletes the on-disk dir, cascades roadmap children + standalone same-session reports", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  let now = 1000, n = 0
+  const store = createStore({ root: dir, clock: () => now++, idgen: () => `id${++n}` })
+  const s = { sessionID: "s1" }
+  const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r", isRoadmap: true, ...s })
+  const { artifact: phase } = await store.publish({ type: "plan", title: "P1", content: "p", parentId: road.id, ...s })
+  const { artifact: phaseRep } = await store.publish({ type: "report", title: "PR", content: "x", parentId: road.id, ...s })
+  const { artifact: looseRep } = await store.publish({ type: "report", title: "LR", content: "y", ...s })
+  // a report in a different session must NOT be touched
+  const { artifact: otherRep } = await store.publish({ type: "report", title: "OR", content: "z", sessionID: "s2" })
+
+  await store.setArchived(road.id, true)
+  const deleted = await store.remove(road.id)
+  expect(deleted.sort()).toEqual([road.id, phase.id, phaseRep.id, looseRep.id].sort())
+
+  for (const id of [road.id, phase.id, phaseRep.id, looseRep.id]) {
+    expect(await store.get(id)).toBeUndefined()
+    expect(existsSync(join(dir, id))).toBe(false)
+  }
+  expect(await store.get(otherRep.id)).toBeDefined()
+})
+
+test("remove rejects a pending verdict for a deleted artifact", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  await store.setArchived(artifact.id, true)
+  // Capture the rejection reason; the catch handler is attached immediately so
+  // the rejection is never unhandled.
+  const reason = store.awaitVerdict(artifact.id).then(() => "resolved", (e) => e.message)
+  await store.remove(artifact.id)
+  expect(await reason).toBe("artifact deleted")
+  expect(store.hasPending(artifact.id)).toBe(false)
 })
 
 test("state survives reload from disk", async () => {

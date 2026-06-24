@@ -38,3 +38,39 @@ test("clicking an artifact calls onSelect", async () => {
   await userEvent.click(screen.getByText("Plan A"))
   expect(onSelect).toHaveBeenCalledWith("a1")
 })
+
+const withArchived: Artifact[] = [
+  ...arts,
+  { id: "z1", type: "plan", title: "Old Plan", status: "approved", currentRevision: 1, createdAt: 5, updatedAt: 5, sessionID: "ses_111", sessionTitle: "Build login", archived: true },
+]
+
+test("archived artifacts are excluded from session groups and shown under Archived", async () => {
+  render(<ArtifactList artifacts={withArchived} selectedId="a1" onSelect={() => {}} />)
+  // Not rendered inline in its session group...
+  expect(screen.queryByText("Old Plan")).toBeNull()
+  // ...but the Archived section exists; expanding it reveals the item.
+  await userEvent.click(screen.getByText("Archived"))
+  expect(screen.getByText("Old Plan")).toBeInTheDocument()
+})
+
+test("Archived section offers Unarchive and Delete (Delete needs confirm)", async () => {
+  const onUnarchive = vi.fn()
+  const onDelete = vi.fn()
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true)
+  render(
+    <ArtifactList
+      artifacts={withArchived}
+      selectedId="a1"
+      onSelect={() => {}}
+      onUnarchive={onUnarchive}
+      onDelete={onDelete}
+    />,
+  )
+  await userEvent.click(screen.getByText("Archived"))
+  await userEvent.click(screen.getByText("Unarchive"))
+  expect(onUnarchive).toHaveBeenCalledWith("z1")
+  await userEvent.click(screen.getByText("Delete"))
+  expect(confirmSpy).toHaveBeenCalled()
+  expect(onDelete).toHaveBeenCalledWith("z1")
+  confirmSpy.mockRestore()
+})

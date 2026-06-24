@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, readdir } from "node:fs/promises"
+import { mkdir, readFile, writeFile, readdir, rm } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { join } from "node:path"
 import type { Artifact, ArtifactType, Comment, Verdict } from "./types"
@@ -184,6 +184,60 @@ export function createStore(opts: StoreOptions) {
     pending.clear()
   }
 
+  /**
+   * Archive or unarchive an artifact, hiding it from the main companion view.
+   * A roadmap is archived as a unit: the flag cascades to all its children
+   * (phase plans + reports). `updatedAt` is intentionally left untouched — this
+   * is not a content edit and must not reorder the list or affect the gate.
+   * Returns the affected artifacts.
+   */
+  async function setArchived(id: string, archived: boolean): Promise<Artifact[]> {
+    const a = artifacts.get(id)
+    if (!a) throw new Error(`unknown artifact: ${id}`)
+    const targets = [a, ...(a.isRoadmap ? [...artifacts.values()].filter((c) => c.parentId === id) : [])]
+    for (const t of targets) {
+      t.archived = archived
+      await persistMeta(t)
+    }
+    return targets.map((t) => ({ ...t }))
+  }
+
+  /**
+   * Permanently delete an archived artifact and its on-disk directory. Only
+   * archived artifacts may be deleted. The delete cascades to: a roadmap's
+   * children (phase plans + reports), plus standalone same-session reports
+   * (reports sharing the target's sessionID with no parentId) — a roadmap's own
+   * phase reports are already covered by the children cascade. Returns the
+   * deleted ids.
+   */
+  async function remove(id: string): Promise<string[]> {
+    const a = artifacts.get(id)
+    if (!a) throw new Error(`unknown artifact: ${id}`)
+    if (!a.archived) throw new Error(`artifact not archived: ${id}`)
+
+    const ids = new Set<string>([id])
+    if (a.isRoadmap) {
+      for (const c of artifacts.values()) if (c.parentId === id) ids.add(c.id)
+    }
+    if (a.sessionID) {
+      for (const c of artifacts.values()) {
+        if (c.type === "report" && c.sessionID === a.sessionID && !c.parentId) ids.add(c.id)
+      }
+    }
+
+    for (const did of ids) {
+      const p = pending.get(did)
+      if (p) {
+        pending.delete(did)
+        p.reject(new Error("artifact deleted"))
+      }
+      artifacts.delete(did)
+      comments.delete(did)
+      await rm(artDir(did), { recursive: true, force: true })
+    }
+    return [...ids]
+  }
+
   async function get(id: string): Promise<Artifact | undefined> {
     const a = artifacts.get(id)
     return a ? { ...a } : undefined
@@ -204,7 +258,7 @@ export function createStore(opts: StoreOptions) {
     let active: Artifact | undefined
     for (const a of artifacts.values()) {
       if (a.type !== "plan" || a.sessionID !== sessionID) continue
-      if (a.status === "draft" || a.isRoadmap) continue
+      if (a.status === "draft" || a.isRoadmap || a.archived) continue
       if (!active || a.updatedAt > active.updatedAt) active = a
     }
     return active ? { ...active } : undefined
@@ -214,7 +268,7 @@ export function createStore(opts: StoreOptions) {
   function getRoadmap(sessionID: string): Artifact | undefined {
     let road: Artifact | undefined
     for (const a of artifacts.values()) {
-      if (!a.isRoadmap || a.sessionID !== sessionID) continue
+      if (!a.isRoadmap || a.sessionID !== sessionID || a.archived) continue
       if (!road || a.updatedAt > road.updatedAt) road = a
     }
     return road ? { ...road } : undefined
@@ -223,7 +277,7 @@ export function createStore(opts: StoreOptions) {
   /** Artifacts (phase plans + reports) that belong to a roadmap, oldest first. */
   function getChildren(parentId: string): Artifact[] {
     return [...artifacts.values()]
-      .filter((a) => a.parentId === parentId)
+      .filter((a) => a.parentId === parentId && !a.archived)
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((a) => ({ ...a }))
   }
@@ -253,6 +307,7 @@ export function createStore(opts: StoreOptions) {
   return {
     publish, readRevision, addComment, getComments,
     awaitVerdict, resolveVerdict, disposeAll, get, list, load,
+    setArchived, remove,
     getActivePlan, getRoadmap, getChildren,
     hasPending: (id: string) => pending.has(id),
   }

@@ -41,6 +41,8 @@ export interface Artifact {
   parentId?: string
   /** true when this plan is a decomposition overview rather than an editable plan */
   isRoadmap?: boolean
+  /** hidden from the main companion view; only archived artifacts may be deleted */
+  archived?: boolean
 }
 
 export type Verdict =

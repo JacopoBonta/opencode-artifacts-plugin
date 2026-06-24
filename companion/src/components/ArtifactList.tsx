@@ -64,9 +64,15 @@ export function ArtifactList(props: {
   artifacts: Artifact[]
   selectedId?: string
   onSelect: (id: string) => void
+  onUnarchive?: (id: string) => void
+  onDelete?: (id: string) => void
 }) {
-  const groups = groupBySession(props.artifacts)
+  const active = props.artifacts.filter((a) => !a.archived)
+  const archived = props.artifacts.filter((a) => a.archived)
+  const groups = groupBySession(active)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  // The Archived section is collapsed by default.
+  const archivedOpen = collapsed["__archived__"] === true
 
   const selectedKey =
     props.artifacts.find((a) => a.id === props.selectedId)?.sessionID ?? "__ungrouped__"
@@ -93,6 +99,48 @@ export function ArtifactList(props: {
         <span className={`badge badge-${badgeType}`}>{badgeType}</span>
         <span className="title">{a.title}</span>
         <span className={`status status-${a.status}`}>{a.status.replace(/_/g, " ")}</span>
+      </li>
+    )
+  }
+
+  const renderArchivedNode = (node: TreeNode) => {
+    const a = node.artifact
+    const badgeType = a.isRoadmap ? "roadmap" : a.type
+    return (
+      <li key={a.id} className="archived-node">
+        <div
+          className={`archived-row ${a.id === props.selectedId ? "selected" : ""}`}
+          onClick={() => props.onSelect(a.id)}
+        >
+          <span className={`badge badge-${badgeType}`}>{badgeType}</span>
+          <span className="title">{a.title}</span>
+          <div className="archived-actions">
+            <button
+              type="button"
+              title="Unarchive"
+              onClick={(e) => { e.stopPropagation(); props.onUnarchive?.(a.id) }}
+            >
+              Unarchive
+            </button>
+            <button
+              type="button"
+              className="danger"
+              title="Delete permanently"
+              onClick={(e) => {
+                e.stopPropagation()
+                const msg = a.isRoadmap
+                  ? `Permanently delete the roadmap "${a.title}" and its ${node.children.length} phase artifact(s)? This cannot be undone.`
+                  : `Permanently delete "${a.title}"? Related reports in the same session are also removed. This cannot be undone.`
+                if (window.confirm(msg)) props.onDelete?.(a.id)
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+        {node.children.length > 0 && (
+          <ul className="artifact-sublist">{node.children.map(renderItem)}</ul>
+        )}
       </li>
     )
   }
@@ -159,6 +207,23 @@ export function ArtifactList(props: {
           </div>
         )
       })}
+      {archived.length > 0 && (
+        <div className="artifact-group archived-group">
+          <button
+            type="button"
+            className="group-header"
+            aria-expanded={archivedOpen}
+            onClick={() => setCollapsed((c) => ({ ...c, __archived__: !archivedOpen }))}
+          >
+            <span className="group-chevron">{archivedOpen ? "▾" : "▸"}</span>
+            <span className="group-title">Archived</span>
+            <span className="group-count">{archived.length}</span>
+          </button>
+          {archivedOpen && (
+            <ul className="artifact-list">{buildTree(archived).map(renderArchivedNode)}</ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }

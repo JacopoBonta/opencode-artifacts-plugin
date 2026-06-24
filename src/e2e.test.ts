@@ -52,3 +52,30 @@ test("plan: publish blocks, browser comments + approves, tool resolves approved"
   expect(result.comments.map((c: any) => c.body)).toContain("looks good")
   expect((await store.get(id))!.status).toBe("approved")
 })
+
+test("archive then delete: DELETE is 409 until archived, then removes the artifact", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "e2e-"))
+  const store = createStore({ root: dir, clock: () => 1, idgen: (() => { let n = 0; return () => `id${++n}` })() })
+  const events = createBroadcaster()
+  const srv = createServer({ store, events, port: 0, staticDir: null })
+  stop = srv.stop
+  const { artifact } = await store.publish({ type: "report", title: "R", content: "done", sessionID: "s1" })
+
+  // Cannot delete an un-archived artifact.
+  const blocked = await fetch(`${srv.url}/api/artifacts/${artifact.id}`, { method: "DELETE" })
+  expect(blocked.status).toBe(409)
+  expect(await store.get(artifact.id)).toBeDefined()
+
+  // Archive it.
+  const arch = await fetch(`${srv.url}/api/artifacts/${artifact.id}/archive`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ archived: true }),
+  })
+  expect(arch.status).toBe(200)
+  expect((await store.get(artifact.id))!.archived).toBe(true)
+
+  // Now delete succeeds and the artifact is gone.
+  const del = await fetch(`${srv.url}/api/artifacts/${artifact.id}`, { method: "DELETE" })
+  expect(del.status).toBe(200)
+  expect(await store.get(artifact.id)).toBeUndefined()
+})
