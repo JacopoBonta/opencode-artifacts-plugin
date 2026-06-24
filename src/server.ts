@@ -124,15 +124,20 @@ export function createServer(opts: ServerOptions) {
         if (va && (va.status === "approved" || va.type === "report")) {
           return json({ error: "read-only artifact" }, 409)
         }
+        // A draft has no agent awaiting a verdict; it must be submitted first.
+        if (va && va.status === "draft") {
+          return json({ error: "draft not submitted for review" }, 409)
+        }
         let b: any
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
-        const comments =
-          b.status === "changes_requested"
-            ? (await store.getComments(id)).filter((c) => !c.resolved)
-            : []
+        // Carry the reviewer's unresolved comments to the agent for BOTH
+        // verdicts — an approval with comments means "proceed, but honor these".
+        const comments = (await store.getComments(id)).filter((c) => !c.resolved)
         await store.resolveVerdict(
           id,
-          b.status === "approved" ? { status: "approved" } : { status: "changes_requested", comments },
+          b.status === "approved"
+            ? { status: "approved", comments }
+            : { status: "changes_requested", comments },
         )
         events.broadcast({ type: "artifact.updated", id })
         return json({ ok: true })

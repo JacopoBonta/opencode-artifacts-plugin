@@ -116,6 +116,25 @@ test("an approved plan is locked: no actions, no comment input, approved banner"
   expect(screen.getByText("a note")).toBeInTheDocument()
 })
 
+test("a draft phase is commentable but not approvable, and shows the draft banner", async () => {
+  vi.mocked(api.listArtifacts).mockResolvedValue([
+    { id: "id1", type: "plan", title: "Phase 1", status: "draft", currentRevision: 1, createdAt: 0, updatedAt: 0, parentId: "road1" },
+  ])
+  vi.mocked(api.getArtifact).mockResolvedValue({
+    artifact: { id: "id1", type: "plan", title: "Phase 1", status: "draft", currentRevision: 1, createdAt: 0, updatedAt: 0, parentId: "road1" },
+    content: "# Draft Phase",
+    comments: [],
+  })
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "Draft Phase" }))
+  // commentable
+  expect(screen.getByPlaceholderText("Add a comment")).toBeInTheDocument()
+  // not approvable
+  expect(screen.queryByRole("button", { name: /approve/i })).toBeNull()
+  expect(screen.queryByRole("button", { name: /request changes/i })).toBeNull()
+  expect(screen.getByText(/draft — the agent will submit/i)).toBeInTheDocument()
+})
+
 test("the left rail shows a theme toggle that flips the theme", async () => {
   localStorage.clear()
   document.documentElement.dataset.theme = "dark"

@@ -3,6 +3,8 @@ import type { Artifact } from "../api"
 
 interface Group { key: string; label: string; artifacts: Artifact[]; latest: number }
 
+export interface TreeNode { artifact: Artifact; children: Artifact[] }
+
 function groupBySession(artifacts: Artifact[]): Group[] {
   const map = new Map<string, Artifact[]>()
   for (const a of artifacts) {
@@ -24,6 +26,40 @@ function groupBySession(artifacts: Artifact[]): Group[] {
   return groups
 }
 
+/**
+ * Build the 2-level tree for one session group: top-level nodes (standalone
+ * plans/reports and roadmaps) with their phase children nested underneath.
+ * Children whose parent is absent fall back to the top level. Pure + exported
+ * so it can be unit-tested without a DOM.
+ */
+export function buildTree(artifacts: Artifact[]): TreeNode[] {
+  const present = new Set(artifacts.map((a) => a.id))
+  const childrenByParent = new Map<string, Artifact[]>()
+  for (const a of artifacts) {
+    if (a.parentId && present.has(a.parentId)) {
+      const list = childrenByParent.get(a.parentId) ?? []
+      list.push(a)
+      childrenByParent.set(a.parentId, list)
+    }
+  }
+  const byCreated = (a: Artifact, b: Artifact) => a.createdAt - b.createdAt
+  return artifacts
+    .filter((a) => !a.parentId || !present.has(a.parentId))
+    // Top-level: newest first. Phase children keep execution order (oldest first).
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .map((a) => ({
+      artifact: a,
+      children: (childrenByParent.get(a.id) ?? []).slice().sort(byCreated),
+    }))
+}
+
+/** Phase progress for a roadmap node: approved phase plans / total phase plans. */
+export function phaseProgress(node: TreeNode): { done: number; total: number } | null {
+  if (!node.artifact.isRoadmap) return null
+  const plans = node.children.filter((c) => c.type === "plan")
+  return { done: plans.filter((c) => c.status === "approved").length, total: plans.length }
+}
+
 export function ArtifactList(props: {
   artifacts: Artifact[]
   selectedId?: string
@@ -35,16 +71,37 @@ export function ArtifactList(props: {
   const selectedKey =
     props.artifacts.find((a) => a.id === props.selectedId)?.sessionID ?? "__ungrouped__"
 
-  function isOpen(g: Group): boolean {
+  function isGroupOpen(g: Group): boolean {
     // Explicit user choice wins; otherwise expand the selected group only.
     if (g.key in collapsed) return !collapsed[g.key]
     return g.key === selectedKey
+  }
+  // Roadmap rows default to expanded so phases are visible.
+  function isNodeOpen(id: string): boolean {
+    const k = `rm:${id}`
+    return k in collapsed ? !collapsed[k] : true
+  }
+
+  const renderItem = (a: Artifact) => {
+    const badgeType = a.isRoadmap ? "roadmap" : a.type
+    return (
+      <li
+        key={a.id}
+        className={a.id === props.selectedId ? "selected" : ""}
+        onClick={() => props.onSelect(a.id)}
+      >
+        <span className={`badge badge-${badgeType}`}>{badgeType}</span>
+        <span className="title">{a.title}</span>
+        <span className={`status status-${a.status}`}>{a.status.replace(/_/g, " ")}</span>
+      </li>
+    )
   }
 
   return (
     <div className="artifact-groups">
       {groups.map((g) => {
-        const open = isOpen(g)
+        const open = isGroupOpen(g)
+        const tree = buildTree(g.artifacts)
         return (
           <div key={g.key} className="artifact-group">
             <button
@@ -59,17 +116,44 @@ export function ArtifactList(props: {
             </button>
             {open && (
               <ul className="artifact-list">
-                {g.artifacts.map((a) => (
-                  <li
-                    key={a.id}
-                    className={a.id === props.selectedId ? "selected" : ""}
-                    onClick={() => props.onSelect(a.id)}
-                  >
-                    <span className={`badge badge-${a.type}`}>{a.type}</span>
-                    <span className="title">{a.title}</span>
-                    <span className={`status status-${a.status}`}>{a.status.replace(/_/g, " ")}</span>
-                  </li>
-                ))}
+                {tree.map((node) => {
+                  if (node.children.length === 0) return renderItem(node.artifact)
+                  const a = node.artifact
+                  const nodeOpen = isNodeOpen(a.id)
+                  const prog = phaseProgress(node)
+                  const badgeType = a.isRoadmap ? "roadmap" : a.type
+                  return (
+                    <li key={a.id} className="roadmap-node">
+                      <div
+                        className={`roadmap-row ${a.id === props.selectedId ? "selected" : ""}`}
+                        onClick={() => props.onSelect(a.id)}
+                      >
+                        <button
+                          type="button"
+                          className="node-chevron"
+                          aria-expanded={nodeOpen}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setCollapsed((c) => ({ ...c, [`rm:${a.id}`]: nodeOpen }))
+                          }}
+                        >
+                          {nodeOpen ? "▾" : "▸"}
+                        </button>
+                        <span className={`badge badge-${badgeType}`}>{badgeType}</span>
+                        <span className="title">{a.title}</span>
+                        {prog && prog.total > 0 && (
+                          <span className="phase-progress">{prog.done}/{prog.total}</span>
+                        )}
+                        <span className={`status status-${a.status}`}>
+                          {a.status.replace(/_/g, " ")}
+                        </span>
+                      </div>
+                      {nodeOpen && (
+                        <ul className="artifact-sublist">{node.children.map(renderItem)}</ul>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>

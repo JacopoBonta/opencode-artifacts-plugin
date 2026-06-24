@@ -73,6 +73,41 @@ test("re-publishing a revision auto-resolves all prior comments", async () => {
   expect(comments.every((c) => c.resolved)).toBe(true)
 })
 
+test("a draft plan has status 'draft'; re-publishing without draft submits it", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1", draft: true })
+  expect(artifact.status).toBe("draft")
+  const { artifact: submitted } = await store.publish({
+    type: "plan", title: "P", content: "v2", artifactId: artifact.id,
+  })
+  expect(submitted.status).toBe("awaiting_review")
+})
+
+test("refining/submitting a draft does NOT auto-resolve its comments", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1", draft: true })
+  await store.addComment(artifact.id, { revision: 1, kind: "general", body: "early feedback" })
+  // submit the draft (re-publish without draft) → comment stays unresolved
+  await store.publish({ type: "plan", title: "P", content: "v2", artifactId: artifact.id })
+  const comments = await store.getComments(artifact.id)
+  expect(comments).toHaveLength(1)
+  expect(comments[0].resolved).toBe(false)
+})
+
+test("getActivePlan skips drafts and tracks the most-recently-updated non-draft plan", async () => {
+  const store = newStore()
+  const s = { sessionID: "s1" }
+  const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r", isRoadmap: true, ...s })
+  await store.resolveVerdict(road.id, { status: "approved" })
+  // scratch two phase drafts — neither should become active
+  const { artifact: p1 } = await store.publish({ type: "plan", title: "P1", content: "p1", parentId: road.id, draft: true, ...s })
+  await store.publish({ type: "plan", title: "P2", content: "p2", parentId: road.id, draft: true, ...s })
+  expect(store.getActivePlan("s1")!.id).toBe(road.id)
+  // submit phase 1 → it becomes the active plan (most recently updated non-draft)
+  await store.publish({ type: "plan", title: "P1", content: "p1b", artifactId: p1.id, ...s })
+  expect(store.getActivePlan("s1")!.id).toBe(p1.id)
+})
+
 test("a brand-new artifact's first publish leaves its (empty) comments untouched", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })

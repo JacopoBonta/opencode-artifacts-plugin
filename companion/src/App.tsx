@@ -15,6 +15,7 @@ export function App() {
   const [detail, setDetail] = useState<ArtifactDetail>()
   const [pendingAnchor, setPendingAnchor] = useState<Anchor>()
   const [connected, setConnected] = useState(true)
+  const [submittingVerdict, setSubmittingVerdict] = useState(false)
   // undefined = viewing the latest revision
   const [viewedRevision, setViewedRevision] = useState<number>()
   const [historicalContent, setHistoricalContent] = useState<string>()
@@ -85,14 +86,24 @@ export function App() {
 
   async function verdict(status: "approved" | "changes_requested") {
     if (!detail) return
-    await api.postVerdict(detail.artifact.id, status)
-    refreshDetail(detail.artifact.id)
+    setSubmittingVerdict(true)
+    try {
+      await api.postVerdict(detail.artifact.id, status)
+      await refreshDetail(detail.artifact.id)
+    } finally {
+      setSubmittingVerdict(false)
+    }
   }
 
   const total = detail?.artifact.currentRevision ?? 0
   const viewing = viewedRevision ?? total
   const isLatest = viewing === total
-  const interactive = isLatest && detail?.artifact.type === "plan" && detail?.artifact.status !== "approved"
+  // A draft can be commented on (early feedback) but not approved until the
+  // agent submits it for review.
+  const canComment =
+    isLatest && detail?.artifact.type === "plan" && detail?.artifact.status !== "approved"
+  const isDraft = detail?.artifact.status === "draft"
+  const canApprove = canComment && !isDraft
   const revisionComments = detail
     ? (isLatest ? detail.comments : detail.comments.filter((c) => c.revision === viewing))
     : []
@@ -134,7 +145,7 @@ export function App() {
               content={isLatest ? detail.content : historicalContent ?? ""}
               comments={revisionComments}
               highlightResolved={!isLatest}
-              onAnchor={interactive ? setPendingAnchor : () => {}}
+              onAnchor={canComment ? setPendingAnchor : () => {}}
               onHighlightClick={onHighlightClick}
               flashAnchorId={flashAnchor?.id}
               flashKey={flashAnchor?.key}
@@ -147,11 +158,23 @@ export function App() {
       <aside className="rail comments-rail">
         {detail && (
           <>
-            {interactive ? (
+            {canComment ? (
               <>
                 {pendingAnchor && (
                   <div className="pending-anchor">
-                    Commenting on: <blockquote>{pendingAnchor.quote}</blockquote>
+                    <div className="pending-anchor-head">
+                      <span>Commenting on:</span>
+                      <button
+                        type="button"
+                        className="pending-anchor-clear"
+                        aria-label="Clear selection"
+                        title="Clear selection"
+                        onClick={() => setPendingAnchor(undefined)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <blockquote>{pendingAnchor.quote}</blockquote>
                   </div>
                 )}
                 <CommentThread
@@ -162,10 +185,23 @@ export function App() {
                   flashCommentId={flashComment?.id}
                   flashKey={flashComment?.key}
                 />
-                <ActionBar
-                  onApprove={() => verdict("approved")}
-                  onRequestChanges={() => verdict("changes_requested")}
-                />
+                {canApprove ? (
+                  <ActionBar
+                    onApprove={() => verdict("approved")}
+                    onRequestChanges={() => verdict("changes_requested")}
+                    disabled={submittingVerdict || detail.artifact.status === "changes_requested"}
+                    note={
+                      detail.artifact.status === "changes_requested"
+                        ? "Changes requested — awaiting the agent's revision."
+                        : undefined
+                    }
+                  />
+                ) : (
+                  <div className="draft-banner">
+                    Draft — the agent will submit this phase for review when its cycle begins.
+                    Comments are saved and shared with the agent then.
+                  </div>
+                )}
               </>
             ) : detail.artifact.type === "report" ? (
               <p className="empty">Agent report — read-only.</p>

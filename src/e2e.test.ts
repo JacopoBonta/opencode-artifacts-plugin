@@ -19,7 +19,12 @@ test("plan: publish blocks, browser comments + approves, tool resolves approved"
   const tool = createPublishTool({ store, events, url: srv.url, notify: () => {} })
 
   const exec = tool.execute(
-    { type: "plan", title: "P", content: "# Plan\n\nstep one" },
+    {
+      type: "plan",
+      title: "P",
+      content:
+        "# Plan\n## Context\nwhy\n## Goals\n- g\n## Approach\na\n## Tasks\n- [ ] step one\n## Verification\nv\n## Status\ntodo",
+    },
     { sessionID: "s1" } as any,
   )
 
@@ -43,5 +48,7 @@ test("plan: publish blocks, browser comments + approves, tool resolves approved"
 
   const result = JSON.parse(await exec as string)
   expect(result.status).toBe("approved")
+  // the reviewer's comment rides along with the approval
+  expect(result.comments.map((c: any) => c.body)).toContain("looks good")
   expect((await store.get(id))!.status).toBe("approved")
 })

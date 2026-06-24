@@ -15,6 +15,12 @@ export interface PublishInput {
   content: string
   artifactId?: string
   sessionID?: string
+  /** roadmap this artifact belongs to (phase plans + phase reports) */
+  parentId?: string
+  /** mark a plan as a decomposition overview */
+  isRoadmap?: boolean
+  /** scratch a plan as a non-blocking draft (not yet submitted for review) */
+  draft?: boolean
 }
 
 interface Pending {
@@ -50,16 +56,21 @@ export function createStore(opts: StoreOptions) {
 
     // Build the next artifact state without mutating the live reference, so a
     // failed write leaves in-memory state untouched (commit only after I/O).
+    // A plan published with `draft` is a non-blocking scratch; re-publishing it
+    // WITHOUT `draft` submits it for review (→ awaiting_review).
+    const planStatus = input.draft ? "draft" : "awaiting_review"
     let next: Artifact
     const isNew = !input.artifactId
+    let wasDraft = false
     if (input.artifactId) {
       const existing = artifacts.get(input.artifactId)
       if (!existing) {
         throw new Error(`unknown artifactId: ${input.artifactId}`)
       }
+      wasDraft = existing.status === "draft"
       // Status follows the artifact's own type, not the (possibly mismatched)
       // type passed on re-publish.
-      const status = existing.type === "plan" ? "awaiting_review" : "published"
+      const status = existing.type === "plan" ? planStatus : "published"
       next = {
         ...existing,
         currentRevision: existing.currentRevision + 1,
@@ -68,7 +79,7 @@ export function createStore(opts: StoreOptions) {
         updatedAt: now,
       }
     } else {
-      const status = input.type === "plan" ? "awaiting_review" : "published"
+      const status = input.type === "plan" ? planStatus : "published"
       next = {
         id: idgen(),
         type: input.type,
@@ -78,6 +89,8 @@ export function createStore(opts: StoreOptions) {
         createdAt: now,
         updatedAt: now,
         sessionID: input.sessionID,
+        parentId: input.parentId,
+        isRoadmap: input.isRoadmap,
       }
     }
 
@@ -85,10 +98,12 @@ export function createStore(opts: StoreOptions) {
     await writeFile(revPath(next.id, next.currentRevision), input.content)
     await writeFile(metaPath(next.id), JSON.stringify(next, null, 2))
 
-    // On a revision bump, all prior comments are assumed addressed by the new
-    // revision — mark them resolved (build a copy, write, commit after I/O).
+    // On a revision bump, prior comments are assumed addressed by the new
+    // revision — mark them resolved. Exception: refining/submitting a DRAFT keeps
+    // its comments unresolved so early feedback stays visible and rides to the
+    // agent on the eventual verdict.
     let resolvedComments: Comment[] | undefined
-    if (!isNew) {
+    if (!isNew && !wasDraft) {
       resolvedComments = (comments.get(next.id) ?? []).map((c) => ({ ...c, resolved: true }))
       await writeFile(commentsPath(next.id), JSON.stringify(resolvedComments, null, 2))
     }
@@ -162,6 +177,32 @@ export function createStore(opts: StoreOptions) {
     return a ? { ...a } : undefined
   }
 
+  /**
+   * The session's active plan: the most recently created plan artifact for the
+   * session. Used by the workflow gate to decide whether edits are unblocked.
+   * Synchronous — reads only in-memory state.
+   */
+  function getActivePlan(sessionID: string): Artifact | undefined {
+    // The active plan is the most recently *updated* non-draft plan for the
+    // session. Drafts are excluded (scratched, not yet submitted); ordering by
+    // updatedAt — not createdAt — means the phase currently submitted/approved is
+    // active even when later-created phase drafts already exist.
+    let active: Artifact | undefined
+    for (const a of artifacts.values()) {
+      if (a.type !== "plan" || a.sessionID !== sessionID || a.status === "draft") continue
+      if (!active || a.updatedAt > active.updatedAt) active = a
+    }
+    return active ? { ...active } : undefined
+  }
+
+  /** Artifacts (phase plans + reports) that belong to a roadmap, oldest first. */
+  function getChildren(parentId: string): Artifact[] {
+    return [...artifacts.values()]
+      .filter((a) => a.parentId === parentId)
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((a) => ({ ...a }))
+  }
+
   async function list(): Promise<Artifact[]> {
     return [...artifacts.values()].map((a) => ({ ...a }))
   }
@@ -187,6 +228,7 @@ export function createStore(opts: StoreOptions) {
   return {
     publish, readRevision, addComment, getComments,
     awaitVerdict, resolveVerdict, disposeAll, get, list, load,
+    getActivePlan, getChildren,
     hasPending: (id: string) => pending.has(id),
   }
 }

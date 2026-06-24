@@ -6,6 +6,30 @@ import { createStore } from "./store"
 import { createBroadcaster } from "./events"
 import { createPublishTool } from "./tools"
 
+const VALID_PLAN = `# P
+## Context
+why
+## Goals
+- g
+## Approach
+a
+## Tasks
+- [ ] t
+## Verification
+v
+## Status
+todo`
+
+const VALID_ROADMAP = `# R
+## Context
+why
+## Goals
+- g
+## Phases
+1. phase one
+## Status
+todo`
+
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
   const store = createStore({ root: dir, clock: () => 1, idgen: (() => { let n = 0; return () => `id${++n}` })() })
@@ -41,7 +65,7 @@ async function waitPending(store: ReturnType<typeof createStore>, id: string, ms
 test("plan publish blocks until verdict, returns approved", async () => {
   const { tool, store } = setup()
   const exec = tool.execute(
-    { type: "plan", title: "P", content: "x" },
+    { type: "plan", title: "P", content: VALID_PLAN },
     { sessionID: "s1" } as any,
   )
   await waitPending(store, "id1")
@@ -50,10 +74,27 @@ test("plan publish blocks until verdict, returns approved", async () => {
   expect(parsed.status).toBe("approved")
 })
 
+test("approved verdict carries the reviewer's comments to the agent", async () => {
+  const { tool, store } = setup()
+  const exec = tool.execute(
+    { type: "plan", title: "P", content: VALID_PLAN },
+    { sessionID: "s1" } as any,
+  )
+  await waitPending(store, "id1")
+  await store.addComment("id1", { revision: 1, kind: "general", body: "use the existing util" })
+  await store.resolveVerdict("id1", {
+    status: "approved",
+    comments: await store.getComments("id1"),
+  })
+  const parsed = JSON.parse(await exec as string)
+  expect(parsed.status).toBe("approved")
+  expect(parsed.comments[0].body).toBe("use the existing util")
+})
+
 test("plan publish returns changes_requested with comment bodies", async () => {
   const { tool, store } = setup()
   const exec = tool.execute(
-    { type: "plan", title: "P", content: "x" },
+    { type: "plan", title: "P", content: VALID_PLAN },
     { sessionID: "s1" } as any,
   )
   await waitPending(store, "id1")
@@ -65,4 +106,71 @@ test("plan publish returns changes_requested with comment bodies", async () => {
   const parsed = JSON.parse(await exec as string)
   expect(parsed.status).toBe("changes_requested")
   expect(parsed.comments[0].body).toBe("redo intro")
+})
+
+test("plan missing required sections is rejected and creates no artifact", async () => {
+  const { tool, store } = setup()
+  const out = await tool.execute(
+    { type: "plan", title: "P", content: "# P\njust prose, no sections" },
+    { sessionID: "s1" } as any,
+  )
+  const parsed = JSON.parse(out as string)
+  expect(parsed.error).toContain("missing required sections")
+  expect(parsed.missingSections).toEqual([
+    "Context", "Goals", "Approach", "Tasks", "Verification", "Status",
+  ])
+  expect(await store.list()).toHaveLength(0)
+})
+
+test("roadmap plan is validated against the roadmap profile and marked isRoadmap", async () => {
+  const { tool, store } = setup()
+  // A standard plan body (no Phases) is rejected when roadmap=true.
+  const bad = await tool.execute(
+    { type: "plan", title: "R", content: VALID_PLAN, roadmap: true },
+    { sessionID: "s1" } as any,
+  )
+  expect(JSON.parse(bad as string).missingSections).toEqual(["Phases"])
+  expect(await store.list()).toHaveLength(0)
+
+  // A proper roadmap publishes and is persisted with isRoadmap.
+  const exec = tool.execute(
+    { type: "plan", title: "R", content: VALID_ROADMAP, roadmap: true },
+    { sessionID: "s1" } as any,
+  )
+  await waitPending(store, "id1")
+  await store.resolveVerdict("id1", { status: "approved" })
+  await exec
+  expect((await store.get("id1"))!.isRoadmap).toBe(true)
+})
+
+test("a draft plan publishes non-blocking and returns status 'draft'", async () => {
+  const { tool, store } = setup()
+  // Does not block on a verdict — resolves immediately.
+  const out = await tool.execute(
+    { type: "plan", title: "Phase 1", content: VALID_PLAN, parentId: "road1", draft: true },
+    { sessionID: "s1" } as any,
+  )
+  const parsed = JSON.parse(out as string)
+  expect(parsed.status).toBe("draft")
+  expect((await store.get(parsed.artifactId))!.status).toBe("draft")
+  expect((await store.get(parsed.artifactId))!.parentId).toBe("road1")
+})
+
+test("a draft is still validated strictly for required sections", async () => {
+  const { tool, store } = setup()
+  const out = await tool.execute(
+    { type: "plan", title: "P", content: "# P\nrough", draft: true },
+    { sessionID: "s1" } as any,
+  )
+  expect(JSON.parse(out as string).missingSections).toContain("Tasks")
+  expect(await store.list()).toHaveLength(0)
+})
+
+test("report carries parentId through to the store", async () => {
+  const { tool, store } = setup()
+  await tool.execute(
+    { type: "report", title: "phase 1 results", content: "done", parentId: "road1" },
+    { sessionID: "s1" } as any,
+  )
+  expect((await store.get("id1"))!.parentId).toBe("road1")
 })

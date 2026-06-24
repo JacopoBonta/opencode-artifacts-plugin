@@ -97,10 +97,13 @@ button { font-family: inherit; }
 .badge { align-self: flex-start; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; }
 .badge-plan { color: var(--plan); background: color-mix(in srgb, var(--plan) 16%, transparent); }
 .badge-report { color: var(--report); background: color-mix(in srgb, var(--report) 16%, transparent); }
+.badge-roadmap { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.phase-progress { font-size: 11px; font-weight: 700; color: var(--text-muted); background: var(--surface-2); border-radius: 999px; padding: 1px 7px; }
 .status { font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
 .status-awaiting_review { color: var(--status-awaiting_review); }
 .status-approved { color: var(--status-approved); }
 .status-changes_requested { color: var(--status-changes_requested); }
+.status-draft { color: var(--text-muted); }
 
 /* main header */
 .main-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
@@ -112,6 +115,7 @@ button { font-family: inherit; }
 .historical-banner { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--info-bg); color: var(--info-fg); font-size: 12.5px; }
 .historical-banner button { background: none; border: none; color: var(--info-fg); text-decoration: underline; cursor: pointer; font-size: 12.5px; }
 .approved-banner { margin-bottom: 16px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--success-bg); color: var(--success-fg); font-size: 12.5px; font-weight: 600; }
+.draft-banner { margin-top: auto; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--info-bg); color: var(--info-fg); font-size: 12.5px; }
 .conn-lost { grid-column: 1 / -1; padding: 8px 16px; background: var(--warn-bg); color: var(--warn-fg); border-bottom: 1px solid var(--border); font-size: 12.5px; }
 
 /* rendered markdown */
@@ -144,17 +148,25 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .resolved-toggle { background: none; border: none; padding: 4px 0; color: var(--text-muted); font-size: 12px; cursor: pointer; }
 .pending-anchor { background: var(--info-bg); color: var(--info-fg); padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 10px; font-size: 12.5px; }
 .pending-anchor blockquote { margin: 4px 0 0; padding-left: 8px; border-left: 3px solid currentColor; }
+.pending-anchor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pending-anchor-clear { background: none; border: none; color: currentColor; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; opacity: 0.7; }
+.pending-anchor-clear:hover { opacity: 1; }
 .comment-thread textarea { width: 100%; min-height: 64px; margin-top: 8px; padding: 8px 10px; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: vertical; }
 .comment-thread textarea:focus { outline: none; border-color: var(--accent); }
 .comment-thread > button { margin-top: 8px; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px; font-weight: 550; cursor: pointer; }
 .comment-thread > button:hover { border-color: var(--accent); }
 
 /* action bar */
-.action-bar { margin-top: auto; display: flex; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+.action-bar { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+.action-buttons { display: flex; gap: 8px; }
+.action-note { margin: 0; font-size: 12px; color: var(--text-muted); }
 .action-bar button { flex: 1; padding: 9px 12px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); transition: background 0.15s, border-color 0.15s; }
 .action-bar button:first-child { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .action-bar button:first-child:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .action-bar button:not(:first-child):hover { border-color: var(--accent); }
+.action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+.action-bar button:disabled:hover { background: var(--accent); border-color: var(--accent); }
+.action-bar button:not(:first-child):disabled:hover { background: var(--surface-2); border-color: var(--border); }
 
 /* misc */
 .empty { color: var(--text-muted); font-size: 13px; }
@@ -169,3 +181,13 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .group-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: normal; font-size: 12.5px; }
 .group-count { background: var(--surface-2); color: var(--text-muted); border-radius: 999px; padding: 1px 7px; font-size: 10px; }
 .artifact-group .artifact-list { padding-left: 4px; }
+
+/* roadmap nodes with nested phase children */
+.artifact-list li.roadmap-node { padding: 0; border: none; background: none; cursor: default; }
+.artifact-list li.roadmap-node:hover { background: none; }
+.roadmap-row { position: relative; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--radius-sm); cursor: pointer; border: 1px solid transparent; transition: background 0.15s, border-color 0.15s; }
+.roadmap-row:hover { background: var(--surface-2); }
+.roadmap-row.selected { background: var(--surface-2); border-color: var(--border); box-shadow: inset 3px 0 0 var(--accent); }
+.roadmap-row .title { flex: 1; }
+.node-chevron { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
+.artifact-sublist { list-style: none; margin: 4px 0 4px 0; padding-left: 16px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid var(--border); }
