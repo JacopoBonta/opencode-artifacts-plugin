@@ -203,7 +203,7 @@ test("remove throws when the target is not archived", async () => {
   await expect(store.remove(artifact.id)).rejects.toThrow("not archived")
 })
 
-test("remove deletes the on-disk dir, cascades roadmap children + standalone same-session reports", async () => {
+test("remove cascades a roadmap's archived children but PRESERVES un-archived same-session reports", async () => {
   const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
   let now = 1000, n = 0
   const store = createStore({ root: dir, clock: () => now++, idgen: () => `id${++n}` })
@@ -211,19 +211,54 @@ test("remove deletes the on-disk dir, cascades roadmap children + standalone sam
   const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r", isRoadmap: true, ...s })
   const { artifact: phase } = await store.publish({ type: "plan", title: "P1", content: "p", parentId: road.id, ...s })
   const { artifact: phaseRep } = await store.publish({ type: "report", title: "PR", content: "x", parentId: road.id, ...s })
+  // A standalone report (no parentId) is NOT archived by the roadmap's archive
+  // cascade, so deleting the roadmap must leave it untouched.
   const { artifact: looseRep } = await store.publish({ type: "report", title: "LR", content: "y", ...s })
   // a report in a different session must NOT be touched
   const { artifact: otherRep } = await store.publish({ type: "report", title: "OR", content: "z", sessionID: "s2" })
 
+  // Archive cascades to the roadmap's children (phase, phaseRep) but not looseRep.
   await store.setArchived(road.id, true)
   const deleted = await store.remove(road.id)
-  expect(deleted.sort()).toEqual([road.id, phase.id, phaseRep.id, looseRep.id].sort())
+  expect(deleted.sort()).toEqual([road.id, phase.id, phaseRep.id].sort())
 
-  for (const id of [road.id, phase.id, phaseRep.id, looseRep.id]) {
+  for (const id of [road.id, phase.id, phaseRep.id]) {
     expect(await store.get(id)).toBeUndefined()
     expect(existsSync(join(dir, id))).toBe(false)
   }
+  // The un-archived loose report and the other-session report both survive.
+  expect(await store.get(looseRep.id)).toBeDefined()
   expect(await store.get(otherRep.id)).toBeDefined()
+})
+
+test("remove cascades an ARCHIVED standalone same-session report", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  let now = 1000, n = 0
+  const store = createStore({ root: dir, clock: () => now++, idgen: () => `id${++n}` })
+  const s = { sessionID: "s1" }
+  const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r", isRoadmap: true, ...s })
+  const { artifact: looseRep } = await store.publish({ type: "report", title: "LR", content: "y", ...s })
+
+  // Archive BOTH (the loose report individually, since the roadmap cascade skips it).
+  await store.setArchived(road.id, true)
+  await store.setArchived(looseRep.id, true)
+  const deleted = await store.remove(road.id)
+  expect(deleted.sort()).toEqual([road.id, looseRep.id].sort())
+  expect(await store.get(looseRep.id)).toBeUndefined()
+})
+
+test("remove of an archived non-roadmap plan does not touch un-archived same-session reports", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  let now = 1000, n = 0
+  const store = createStore({ root: dir, clock: () => now++, idgen: () => `id${++n}` })
+  const s = { sessionID: "s1" }
+  const { artifact: plan } = await store.publish({ type: "plan", title: "P", content: "p", ...s })
+  const { artifact: rep } = await store.publish({ type: "report", title: "R", content: "y", ...s })
+
+  await store.setArchived(plan.id, true)
+  const deleted = await store.remove(plan.id)
+  expect(deleted).toEqual([plan.id])
+  expect(await store.get(rep.id)).toBeDefined()
 })
 
 test("remove rejects a pending verdict for a deleted artifact", async () => {

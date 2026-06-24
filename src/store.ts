@@ -203,12 +203,14 @@ export function createStore(opts: StoreOptions) {
   }
 
   /**
-   * Permanently delete an archived artifact and its on-disk directory. Only
-   * archived artifacts may be deleted. The delete cascades to: a roadmap's
-   * children (phase plans + reports), plus standalone same-session reports
-   * (reports sharing the target's sessionID with no parentId) — a roadmap's own
-   * phase reports are already covered by the children cascade. Returns the
-   * deleted ids.
+   * Permanently delete an archived artifact and its on-disk directory. Delete
+   * NEVER removes an un-archived artifact: the target must be archived, and the
+   * cascade only sweeps up tied-together artifacts that are THEMSELVES archived.
+   * This makes delete symmetric with the archive-before-delete invariant — you
+   * can't lose a still-visible artifact by deleting something else. The cascade
+   * covers: a roadmap's archived children (phase plans + reports), plus archived
+   * standalone same-session reports (reports sharing the target's sessionID with
+   * no parentId). Returns the deleted ids.
    */
   async function remove(id: string): Promise<string[]> {
     const a = artifacts.get(id)
@@ -217,11 +219,12 @@ export function createStore(opts: StoreOptions) {
 
     const ids = new Set<string>([id])
     if (a.isRoadmap) {
-      for (const c of artifacts.values()) if (c.parentId === id) ids.add(c.id)
+      for (const c of artifacts.values()) if (c.parentId === id && c.archived) ids.add(c.id)
     }
     if (a.sessionID) {
       for (const c of artifacts.values()) {
-        if (c.type === "report" && c.sessionID === a.sessionID && !c.parentId) ids.add(c.id)
+        if (c.type === "report" && c.sessionID === a.sessionID && !c.parentId && c.archived)
+          ids.add(c.id)
       }
     }
 
