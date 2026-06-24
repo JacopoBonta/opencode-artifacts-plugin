@@ -138,7 +138,10 @@ export function App() {
       <aside className="rail">
         <div className="rail-header">
           <h2>Artifacts</h2>
-          <ThemeToggle />
+          <div className="rail-header-actions">
+            <ReadingWidthToggle />
+            <ThemeToggle />
+          </div>
         </div>
         <ArtifactList artifacts={artifacts} selectedId={selectedId} onSelect={select} />
       </aside>
@@ -157,7 +160,6 @@ export function App() {
                 <span className={`status status-${detail.artifact.status}`}>
                   {detail.artifact.status.replace(/_/g, " ")}
                 </span>
-                <ReadingWidthToggle />
               </div>
             </header>
             {!isLatest && (

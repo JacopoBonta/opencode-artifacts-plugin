@@ -89,6 +89,7 @@ button { font-family: inherit; }
 
 /* left rail header */
 .rail-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.rail-header-actions { display: flex; align-items: center; gap: 6px; }
 .rail-header h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px; line-height: 1; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
 .theme-toggle:hover { border-color: var(--accent); }
