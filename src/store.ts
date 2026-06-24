@@ -195,16 +195,29 @@ export function createStore(opts: StoreOptions) {
    * Synchronous — reads only in-memory state.
    */
   function getActivePlan(sessionID: string): Artifact | undefined {
-    // The active plan is the most recently *updated* non-draft plan for the
-    // session. Drafts are excluded (scratched, not yet submitted); ordering by
-    // updatedAt — not createdAt — means the phase currently submitted/approved is
+    // The active plan governs the edit gate: the most recently *updated*
+    // non-draft, NON-ROADMAP plan for the session. Roadmaps are excluded so that
+    // updating a roadmap's Status (a progress update) can't flip it to "active"
+    // and close the gate mid-phase; drafts are excluded as not-yet-submitted.
+    // Ordering by updatedAt means the phase currently submitted/approved is
     // active even when later-created phase drafts already exist.
     let active: Artifact | undefined
     for (const a of artifacts.values()) {
-      if (a.type !== "plan" || a.sessionID !== sessionID || a.status === "draft") continue
+      if (a.type !== "plan" || a.sessionID !== sessionID) continue
+      if (a.status === "draft" || a.isRoadmap) continue
       if (!active || a.updatedAt > active.updatedAt) active = a
     }
     return active ? { ...active } : undefined
+  }
+
+  /** The session's roadmap (most recently updated isRoadmap plan), if any. */
+  function getRoadmap(sessionID: string): Artifact | undefined {
+    let road: Artifact | undefined
+    for (const a of artifacts.values()) {
+      if (!a.isRoadmap || a.sessionID !== sessionID) continue
+      if (!road || a.updatedAt > road.updatedAt) road = a
+    }
+    return road ? { ...road } : undefined
   }
 
   /** Artifacts (phase plans + reports) that belong to a roadmap, oldest first. */
@@ -240,7 +253,7 @@ export function createStore(opts: StoreOptions) {
   return {
     publish, readRevision, addComment, getComments,
     awaitVerdict, resolveVerdict, disposeAll, get, list, load,
-    getActivePlan, getChildren,
+    getActivePlan, getRoadmap, getChildren,
     hasPending: (id: string) => pending.has(id),
   }
 }

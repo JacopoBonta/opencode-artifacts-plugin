@@ -102,9 +102,14 @@ test("getActivePlan skips drafts and tracks the most-recently-updated non-draft 
   // scratch two phase drafts — neither should become active
   const { artifact: p1 } = await store.publish({ type: "plan", title: "P1", content: "p1", parentId: road.id, draft: true, ...s })
   await store.publish({ type: "plan", title: "P2", content: "p2", parentId: road.id, draft: true, ...s })
-  expect(store.getActivePlan("s1")!.id).toBe(road.id)
+  // roadmaps + drafts are excluded → no active (gate-governing) plan yet
+  expect(store.getActivePlan("s1")).toBeUndefined()
+  expect(store.getRoadmap("s1")!.id).toBe(road.id)
   // submit phase 1 → it becomes the active plan (most recently updated non-draft)
   await store.publish({ type: "plan", title: "P1", content: "p1b", artifactId: p1.id, ...s })
+  expect(store.getActivePlan("s1")!.id).toBe(p1.id)
+  // a progress update to the roadmap must NOT steal "active" from the phase
+  await store.publish({ type: "plan", title: "R", content: "r2", artifactId: road.id, ...s })
   expect(store.getActivePlan("s1")!.id).toBe(p1.id)
 })
 
