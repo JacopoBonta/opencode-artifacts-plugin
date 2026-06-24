@@ -63,10 +63,13 @@ export function phaseProgress(node: TreeNode): { done: number; total: number } |
 export function ArtifactList(props: {
   artifacts: Artifact[]
   selectedId?: string
+  activeSessionID?: string
+  unseenIds?: Set<string>
   onSelect: (id: string) => void
   onUnarchive?: (id: string) => void
   onDelete?: (id: string) => void
 }) {
+  const unseen = props.unseenIds ?? new Set<string>()
   const active = props.artifacts.filter((a) => !a.archived)
   const archived = props.artifacts.filter((a) => a.archived)
   const groups = groupBySession(active)
@@ -98,6 +101,7 @@ export function ArtifactList(props: {
       >
         <span className={`badge badge-${badgeType}`}>{badgeType}</span>
         <span className="title">{a.title}</span>
+        {unseen.has(a.id) && <span className="activity-dot" title="New activity" />}
         <span className={`status status-${a.status}`}>{a.status.replace(/_/g, " ")}</span>
       </li>
     )
@@ -150,16 +154,22 @@ export function ArtifactList(props: {
       {groups.map((g) => {
         const open = isGroupOpen(g)
         const tree = buildTree(g.artifacts)
+        const isCurrent = props.activeSessionID != null && g.key === props.activeSessionID
+        // When collapsed, surface a dot on the header if any artifact inside has
+        // unseen activity (the per-item dots are hidden).
+        const groupHasUnseen = !open && g.artifacts.some((a) => unseen.has(a.id))
         return (
           <div key={g.key} className="artifact-group">
             <button
               type="button"
-              className="group-header"
+              className={`group-header${isCurrent ? " current" : ""}`}
               aria-expanded={open}
               onClick={() => setCollapsed((c) => ({ ...c, [g.key]: open }))}
             >
               <span className="group-chevron">{open ? "▾" : "▸"}</span>
               <span className="group-title">{g.label}</span>
+              {groupHasUnseen && <span className="activity-dot" title="New activity" />}
+              {isCurrent && <span className="current-badge">current</span>}
               <span className="group-count">{g.artifacts.length}</span>
             </button>
             {open && (
@@ -189,6 +199,7 @@ export function ArtifactList(props: {
                         </button>
                         <span className={`badge badge-${badgeType}`}>{badgeType}</span>
                         <span className="title">{a.title}</span>
+                        {unseen.has(a.id) && <span className="activity-dot" title="New activity" />}
                         {prog && prog.total > 0 && (
                           <span className="phase-progress">{prog.done}/{prog.total}</span>
                         )}

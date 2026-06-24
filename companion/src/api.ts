@@ -11,6 +11,16 @@ export interface Artifact {
 }
 export interface ArtifactDetail { artifact: Artifact; content: string; comments: Comment[] }
 
+/** Events pushed over the /api/events SSE stream. */
+export type ServerEvent =
+  | { type: "artifact.published"; id: string }
+  | { type: "artifact.updated"; id: string }
+  | { type: "artifact.archived"; id: string }
+  | { type: "artifact.deleted"; id: string }
+  | { type: "comment.added"; id: string }
+  | { type: "session.active"; sessionID?: string }
+  | { type: "ping" }
+
 const jsonPost = (body: unknown) => ({
   method: "POST",
   headers: { "content-type": "application/json" },
@@ -45,7 +55,7 @@ export async function deleteArtifact(id: string): Promise<void> {
   await fetch(`/api/artifacts/${id}`, { method: "DELETE" })
 }
 export function subscribeEvents(
-  onEvent: (e: any) => void,
+  onEvent: (e: ServerEvent) => void,
   onError?: (e: Event) => void,
 ): () => void {
   const es = new EventSource("/api/events")
