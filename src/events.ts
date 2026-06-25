@@ -19,7 +19,16 @@ export function createBroadcaster() {
     },
     broadcast(event: ServerEvent): void {
       const data = JSON.stringify(event)
-      for (const fn of listeners) fn(data)
+      // Isolate listeners: one throwing listener (e.g. a closed SSE stream whose
+      // enqueue fails) must not starve the others of this event. Drop a listener
+      // that throws — its connection is gone.
+      for (const fn of listeners) {
+        try {
+          fn(data)
+        } catch {
+          listeners.delete(fn)
+        }
+      }
     },
     count: () => listeners.size,
   }

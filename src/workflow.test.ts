@@ -55,6 +55,43 @@ test("validatePlanStructure reports missing sections", () => {
   if (!res.ok) expect(res.missing).toEqual(["Goals", "Approach", "Tasks", "Verification", "Status"])
 })
 
+test("validatePlanStructure ignores headings inside fenced code blocks", () => {
+  // A plan whose only "## Goals" etc. live inside a code fence must NOT pass.
+  const plan = `# T
+## Context
+Here is a template I am NOT actually using:
+\`\`\`md
+## Goals
+## Approach
+## Tasks
+## Verification
+## Status
+\`\`\`
+That code block should not count.`
+  const res = validatePlanStructure(plan)
+  expect(res.ok).toBe(false)
+  if (!res.ok) expect(res.missing).toEqual(["Goals", "Approach", "Tasks", "Verification", "Status"])
+
+  // Real headings after a closed fence are still detected.
+  const ok = `# T
+## Context
+c
+\`\`\`
+code
+\`\`\`
+## Goals
+g
+## Approach
+a
+## Tasks
+- [ ] x
+## Verification
+v
+## Status
+s`
+  expect(validatePlanStructure(ok)).toEqual({ ok: true })
+})
+
 test("validatePlanStructure roadmap profile requires Phases", () => {
   const roadmap = `# R
 ## Context
