@@ -1,4 +1,5 @@
 import type { Artifact } from "./types"
+import { isMutatingBash } from "./bash-gate"
 
 /**
  * Workflow policy for the plan -> implement -> report flow, including
@@ -131,28 +132,16 @@ export function validatePlanStructure(
 export const GATED_TOOLS = new Set(["write", "edit", "patch"])
 
 /**
- * Heuristic for a mutating `bash` command. `bash` is general-purpose, so we
- * can't gate it wholesale without blocking read-only exploration (grep, ls,
- * git status, running tests) the agent needs while planning. Instead we gate
- * only commands that look like they change the workspace.
- *
- * Notable non-matches (so they aren't gated):
- *  - fd redirects / dups: `2>&1`, `2>/dev/null` (the `>` is preceded by a digit)
- *  - the `->` that shows up in commit messages and prose (preceded by `-`)
- *  - VCS bookkeeping that doesn't touch the working tree: `git add`, `commit`,
- *    `push`, `status`, `diff`, `log`. Only git subcommands that CAN change
- *    working-tree files are gated (checkout/switch/apply/reset/...).
- * A file-writing redirect (`> file`, `>> file`) IS matched.
+ * Does this tool call mutate the workspace (and thus require an approved plan)?
+ * `bash` is gated via `isMutatingBash` (a quote/operator-aware heuristic) so
+ * read-only exploration (grep, ls, git status, running tests) stays unblocked
+ * while planning. See `bash-gate.ts`.
  */
-export const MUTATING_BASH_RE =
-  /(^|[\s;&|])(rm|mv|cp|mkdir|rmdir|touch|truncate|dd|tee|chmod|chown|ln)\s|(?<![\d&>\-])>>?\s*[^\s&|]|(^|[\s;&|])sed\s+[^|]*-i|(^|[\s;&|])(npm|pnpm|yarn|bun|pip|cargo|go|brew)\s+(i|install|add|remove|rm|uninstall)\b|(^|[\s;&|])git\s+(checkout|switch|apply|reset|restore|merge|rebase|stash|clean|rm|mv)\b/
-
-/** Does this tool call mutate the workspace (and thus require an approved plan)? */
 export function isMutatingCall(toolName: string, args: unknown): boolean {
   if (GATED_TOOLS.has(toolName)) return true
   if (toolName === "bash") {
     const command = (args as { command?: unknown } | null | undefined)?.command
-    return typeof command === "string" && MUTATING_BASH_RE.test(command)
+    return typeof command === "string" && isMutatingBash(command)
   }
   return false
 }
