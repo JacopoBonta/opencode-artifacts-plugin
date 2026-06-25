@@ -40,6 +40,12 @@ test("shows a connection-lost banner when the event stream errors", async () => 
   expect(await findByText(/connection lost/i)).toBeInTheDocument()
 })
 
+test("shows an error banner when loading the artifact list fails", async () => {
+  vi.mocked(api.listArtifacts).mockRejectedValue(new Error("500"))
+  const { findByText } = render(<App />)
+  expect(await findByText(/couldn't reach the companion server/i)).toBeInTheDocument()
+})
+
 test("clicking another artifact in the list selects it", async () => {
   vi.mocked(api.listArtifacts).mockResolvedValue([
     { id: "id1", type: "plan", title: "First", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 0 },

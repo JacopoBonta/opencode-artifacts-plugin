@@ -27,39 +27,56 @@ const jsonPost = (body: unknown) => ({
   body: JSON.stringify(body),
 })
 
+/** fetch + status check; throws on a non-2xx so callers can surface the failure. */
+async function req(input: string, init?: RequestInit): Promise<Response> {
+  const res = init ? await fetch(input, init) : await fetch(input)
+  if (!res.ok) throw new Error(`request to ${input} failed: ${res.status}`)
+  return res
+}
+
 export async function listArtifacts(): Promise<Artifact[]> {
-  return (await fetch("/api/artifacts")).json()
+  return (await req("/api/artifacts")).json()
 }
 export async function getArtifact(id: string): Promise<ArtifactDetail> {
-  return (await fetch(`/api/artifacts/${id}`)).json()
+  return (await req(`/api/artifacts/${id}`)).json()
 }
 export async function getRevision(id: string, n: number): Promise<{ content: string }> {
-  return (await fetch(`/api/artifacts/${id}/revisions/${n}`)).json()
+  return (await req(`/api/artifacts/${id}/revisions/${n}`)).json()
 }
 export async function postComment(
   id: string,
   c: { revision: number; kind: "anchor" | "general"; anchor?: Anchor; body: string },
 ): Promise<Comment> {
-  return (await fetch(`/api/artifacts/${id}/comments`, jsonPost(c))).json()
+  return (await req(`/api/artifacts/${id}/comments`, jsonPost(c))).json()
 }
 export async function postVerdict(
   id: string,
   status: "approved" | "changes_requested",
 ): Promise<void> {
-  await fetch(`/api/artifacts/${id}/verdict`, jsonPost({ status }))
+  await req(`/api/artifacts/${id}/verdict`, jsonPost({ status }))
 }
 export async function setArchived(id: string, archived: boolean): Promise<void> {
-  await fetch(`/api/artifacts/${id}/archive`, jsonPost({ archived }))
+  await req(`/api/artifacts/${id}/archive`, jsonPost({ archived }))
 }
 export async function deleteArtifact(id: string): Promise<void> {
-  await fetch(`/api/artifacts/${id}`, { method: "DELETE" })
+  await req(`/api/artifacts/${id}`, { method: "DELETE" })
 }
 export function subscribeEvents(
   onEvent: (e: ServerEvent) => void,
   onError?: (e: Event) => void,
 ): () => void {
   const es = new EventSource("/api/events")
-  es.onmessage = (m) => onEvent(JSON.parse(m.data))
+  es.onmessage = (m) => {
+    // A malformed frame must not throw out of the handler (and be swallowed by
+    // EventSource); skip it instead.
+    let parsed: ServerEvent
+    try {
+      parsed = JSON.parse(m.data)
+    } catch {
+      return
+    }
+    onEvent(parsed)
+  }
   // EventSource auto-reconnects on error; surface it so the UI can show staleness.
   es.onerror = (e) => onError?.(e)
   return () => es.close()

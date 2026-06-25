@@ -1,13 +1,15 @@
+import { readStored, writeStored } from "./storage"
+
 export type Theme = "dark" | "light"
 
 const KEY = "oc-artifacts-theme"
 
 export function getTheme(): Theme {
-  return localStorage.getItem(KEY) === "light" ? "light" : "dark"
+  return readStored(KEY) === "light" ? "light" : "dark"
 }
 
 export function setTheme(t: Theme): void {
-  localStorage.setItem(KEY, t)
+  writeStored(KEY, t)
   document.documentElement.dataset.theme = t
 }
 

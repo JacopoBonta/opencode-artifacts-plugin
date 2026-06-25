@@ -75,7 +75,12 @@ export function ArtifactView(props: {
       if (comment.resolved && !props.highlightResolved) continue
       const offsets = findAnchorOffsets(text, comment.anchor)
       if (!offsets) continue
-      wrapRange(ref.current, offsets.start, offsets.end, comment.body, comment.id)
+      try {
+        wrapRange(ref.current, offsets.start, offsets.end, comment.body, comment.id)
+      } catch {
+        // Overlapping/edge ranges can make surroundContents throw — skip this
+        // one anchor rather than aborting the whole highlight pass.
+      }
     }
   }, [props.content, props.comments, props.highlightResolved])
 

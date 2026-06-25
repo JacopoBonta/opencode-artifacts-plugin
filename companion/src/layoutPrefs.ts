@@ -1,6 +1,8 @@
 // Persisted layout preferences (reading width + side-rail widths), following the
 // same localStorage + documentElement.dataset pattern as theme.ts.
 
+import { readStored, writeStored } from "./storage"
+
 export type ReadingWidth = "comfortable" | "stretched"
 
 const READING_KEY = "oc-artifacts-reading"
@@ -23,16 +25,16 @@ export function clampRight(px: number): number {
 }
 
 export function getReadingWidth(): ReadingWidth {
-  return localStorage.getItem(READING_KEY) === "stretched" ? "stretched" : "comfortable"
+  return readStored(READING_KEY) === "stretched" ? "stretched" : "comfortable"
 }
 
 export function setReadingWidth(w: ReadingWidth): void {
-  localStorage.setItem(READING_KEY, w)
+  writeStored(READING_KEY, w)
   document.documentElement.dataset.reading = w
 }
 
 function readWidth(key: string, fallback: number, clamp: (n: number) => number): number {
-  const raw = Number(localStorage.getItem(key))
+  const raw = Number(readStored(key))
   return Number.isFinite(raw) && raw > 0 ? clamp(raw) : fallback
 }
 
@@ -44,12 +46,12 @@ export function getRailRight(): number {
 }
 export function setRailLeft(px: number): number {
   const v = clampLeft(px)
-  localStorage.setItem(LEFT_KEY, String(v))
+  writeStored(LEFT_KEY, String(v))
   return v
 }
 export function setRailRight(px: number): number {
   const v = clampRight(px)
-  localStorage.setItem(RIGHT_KEY, String(v))
+  writeStored(RIGHT_KEY, String(v))
   return v
 }
 

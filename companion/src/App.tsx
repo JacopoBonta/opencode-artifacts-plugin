@@ -37,11 +37,40 @@ export function App() {
   const onHighlightClick = useCallback((id: string) => setFlashComment({ id, key: ++flashSeq.current }), [])
   const onCommentClick = useCallback((id: string) => setFlashAnchor({ id, key: ++flashSeq.current }), [])
 
-  const refreshList = useCallback(async () => setArtifacts(await api.listArtifacts()), [])
-  const refreshDetail = useCallback(async (id: string) => setDetail(await api.getArtifact(id)), [])
+  // A transient fetch-error message (distinct from `connected`, which tracks the
+  // SSE stream). Cleared by the next successful list/detail refresh.
+  const [error, setError] = useState<string>()
+  // Current selection, mirrored into a ref so the SSE handler can read it without
+  // re-subscribing on every selection change.
+  const selectedIdRef = useRef<string>()
+  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+  // Monotonic counters: a slow, stale response must not clobber a newer one.
+  const detailSeq = useRef(0)
+  const revSeq = useRef(0)
+
+  const refreshList = useCallback(async () => {
+    try {
+      setArtifacts(await api.listArtifacts())
+      setError(undefined)
+    } catch {
+      setError("Couldn't reach the companion server.")
+    }
+  }, [])
+  const refreshDetail = useCallback(async (id: string) => {
+    const seq = ++detailSeq.current
+    try {
+      const d = await api.getArtifact(id)
+      if (seq !== detailSeq.current) return // a newer refresh superseded this one
+      setDetail(d)
+      setError(undefined)
+    } catch {
+      if (seq === detailSeq.current) setError("Couldn't load the selected artifact.")
+    }
+  }, [])
 
   const select = useCallback((id: string) => {
     setSelectedId(id)
+    selectedIdRef.current = id
     setPendingAnchor(undefined)
     setViewedRevision(undefined)
     setHistoricalContent(undefined)
@@ -78,11 +107,12 @@ export function App() {
           })
           return
         }
-        if (selectedId && e.id === selectedId) {
+        const sel = selectedIdRef.current
+        if (sel && e.id === sel) {
           // A new revision may have arrived — return to the latest view.
           setViewedRevision(undefined)
           setHistoricalContent(undefined)
-          refreshDetail(selectedId)
+          refreshDetail(sel)
           return
         }
         // New/updated activity on an artifact that isn't open — flag it.
@@ -99,7 +129,10 @@ export function App() {
       },
       () => setConnected(false),
     )
-  }, [selectedId, refreshList, refreshDetail])
+    // Subscribe ONCE: the handler reads the live selection from selectedIdRef, so
+    // it never needs to tear down/recreate the EventSource (which would drop
+    // events during the reconnect window) when the selection changes.
+  }, [refreshList, refreshDetail])
 
   // Auto-select the first non-archived artifact once the list loads and nothing
   // is selected (fall back to the first artifact if all are archived).
@@ -119,15 +152,27 @@ export function App() {
   }, [artifacts, selectedId])
 
   async function archive(id: string) {
-    await api.setArchived(id, true)
+    try {
+      await api.setArchived(id, true)
+    } catch {
+      setError("Couldn't archive the artifact.")
+    }
     refreshList()
   }
   async function unarchive(id: string) {
-    await api.setArchived(id, false)
+    try {
+      await api.setArchived(id, false)
+    } catch {
+      setError("Couldn't unarchive the artifact.")
+    }
     refreshList()
   }
   async function remove(id: string) {
-    await api.deleteArtifact(id)
+    try {
+      await api.deleteArtifact(id)
+    } catch {
+      setError("Couldn't delete the artifact.")
+    }
     refreshList()
   }
 
@@ -139,20 +184,32 @@ export function App() {
       return
     }
     setViewedRevision(n)
-    const { content } = await api.getRevision(detail.artifact.id, n)
-    setHistoricalContent(content)
+    const seq = ++revSeq.current
+    try {
+      const { content } = await api.getRevision(detail.artifact.id, n)
+      if (seq === revSeq.current) {
+        setHistoricalContent(content)
+        setError(undefined)
+      }
+    } catch {
+      if (seq === revSeq.current) setError(`Couldn't load revision ${n}.`)
+    }
   }, [detail])
 
   async function addComment(body: string, anchor?: Anchor) {
     if (!detail) return
-    await api.postComment(detail.artifact.id, {
-      revision: detail.artifact.currentRevision,
-      kind: anchor ? "anchor" : "general",
-      anchor,
-      body,
-    })
-    setPendingAnchor(undefined)
-    refreshDetail(detail.artifact.id)
+    try {
+      await api.postComment(detail.artifact.id, {
+        revision: detail.artifact.currentRevision,
+        kind: anchor ? "anchor" : "general",
+        anchor,
+        body,
+      })
+      setPendingAnchor(undefined)
+      refreshDetail(detail.artifact.id)
+    } catch {
+      setError("Couldn't post the comment.")
+    }
   }
 
   async function verdict(status: "approved" | "changes_requested") {
@@ -161,6 +218,8 @@ export function App() {
     try {
       await api.postVerdict(detail.artifact.id, status)
       await refreshDetail(detail.artifact.id)
+    } catch {
+      setError("Couldn't submit the verdict.")
     } finally {
       setSubmittingVerdict(false)
     }
@@ -186,6 +245,9 @@ export function App() {
     >
       {!connected && (
         <div className="conn-lost">Connection lost — reconnecting…</div>
+      )}
+      {error && (
+        <div className="conn-lost error-banner" role="alert">{error}</div>
       )}
       <ResizeHandle
         side="left"
