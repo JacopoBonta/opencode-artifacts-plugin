@@ -4,7 +4,7 @@ import { listArtifacts, getArtifact, postComment, postVerdict, getRevision } fro
 afterEach(() => vi.restoreAllMocks())
 
 test("listArtifacts GETs /api/artifacts", async () => {
-  const fetchMock = vi.fn().mockResolvedValue({ json: async () => [{ id: "a" }] })
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [{ id: "a" }] })
   vi.stubGlobal("fetch", fetchMock)
   const out = await listArtifacts()
   expect(fetchMock).toHaveBeenCalledWith("/api/artifacts")
@@ -12,7 +12,7 @@ test("listArtifacts GETs /api/artifacts", async () => {
 })
 
 test("postVerdict POSTs status to verdict endpoint", async () => {
-  const fetchMock = vi.fn().mockResolvedValue({ json: async () => ({ ok: true }) })
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
   vi.stubGlobal("fetch", fetchMock)
   await postVerdict("id1", "approved")
   expect(fetchMock).toHaveBeenCalledWith(
@@ -24,9 +24,16 @@ test("postVerdict POSTs status to verdict endpoint", async () => {
 })
 
 test("getRevision GETs the revision endpoint", async () => {
-  const fetchMock = vi.fn().mockResolvedValue({ json: async () => ({ content: "# rev 2" }) })
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ content: "# rev 2" }) })
   vi.stubGlobal("fetch", fetchMock)
   const out = await getRevision("id1", 2)
   expect(fetchMock).toHaveBeenCalledWith("/api/artifacts/id1/revisions/2")
   expect(out).toEqual({ content: "# rev 2" })
+})
+
+test("a non-2xx response rejects instead of returning a bad body", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+  vi.stubGlobal("fetch", fetchMock)
+  await expect(getArtifact("id1")).rejects.toThrow(/500/)
+  await expect(postComment("id1", { revision: 1, kind: "general", body: "x" })).rejects.toThrow(/500/)
 })
