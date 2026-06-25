@@ -100,10 +100,22 @@ Which phase is in progress and what is done. Update IN PLACE.`
 
 export type PlanValidation = { ok: true } | { ok: false; missing: string[] }
 
-/** Extract the text of every `##`/`###` heading in a markdown document. */
+/**
+ * Extract the text of every `##`/`###` heading in a markdown document. Lines
+ * inside fenced code blocks (``` or ~~~) are skipped so a code sample containing
+ * e.g. `## Goals` can't satisfy plan validation.
+ */
 function headings(content: string): string[] {
   const out: string[] = []
+  let fence: string | undefined // the opening fence marker while inside a block
   for (const line of content.split(/\r?\n/)) {
+    const f = /^\s*(```+|~~~+)/.exec(line)
+    if (f) {
+      if (!fence) fence = f[1][0] // entering a block (track ` vs ~)
+      else if (f[1][0] === fence) fence = undefined // matching close
+      continue
+    }
+    if (fence) continue
     const m = /^#{2,3}\s+(.+?)\s*$/.exec(line)
     if (m) out.push(m[1].toLowerCase())
   }

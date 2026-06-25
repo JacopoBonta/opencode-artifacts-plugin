@@ -169,6 +169,12 @@ test("POST comment to a traversal id (contains ..) or unknown artifact returns 4
   expect(unknown.status).toBe(404)
 })
 
+test("GET detail and revision routes also reject traversal ids", async () => {
+  const { srv } = setup()
+  expect((await fetch(`${srv.url}/api/artifacts/x..x`)).status).toBe(404)
+  expect((await fetch(`${srv.url}/api/artifacts/x..x/revisions/1`)).status).toBe(404)
+})
+
 test("GET unknown revision returns 404, malformed verdict JSON returns 400", async () => {
   const { store, srv } = setup()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })

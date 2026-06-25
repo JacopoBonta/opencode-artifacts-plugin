@@ -84,6 +84,7 @@ export function createServer(opts: ServerOptions) {
       const detail = path.match(/^\/api\/artifacts\/([^/]+)$/)
       if (detail && req.method === "GET") {
         const id = detail[1]
+        if (!safeId(id)) return json({ error: "not found" }, 404)
         const artifact = await store.get(id)
         if (!artifact) return json({ error: "not found" }, 404)
         const content = await store.readRevision(id, artifact.currentRevision)
@@ -93,6 +94,7 @@ export function createServer(opts: ServerOptions) {
 
       const revMatch = path.match(/^\/api\/artifacts\/([^/]+)\/revisions\/(\d+)$/)
       if (revMatch && req.method === "GET") {
+        if (!safeId(revMatch[1])) return json({ error: "not found" }, 404)
         try {
           const content = await store.readRevision(revMatch[1], Number(revMatch[2]))
           return json({ content })
