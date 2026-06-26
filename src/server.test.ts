@@ -258,3 +258,64 @@ test("GET /api/artifacts omits sessionTitle when no resolver is configured", asy
   const body = await (await fetch(`${srv.url}/api/artifacts`)).json()
   expect(body[0].sessionTitle).toBeUndefined()
 })
+
+test("declining a plan resolves the verdict, records the reason, and interrupts the session", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  const store = createStore({ root: dir, clock: () => 1, idgen: (() => { let n = 0; return () => `id${++n}` })() })
+  const events = createBroadcaster()
+  const interrupted: string[] = []
+  const srv = createServer({
+    store, events, port: 0, staticDir: null,
+    interruptSession: (id) => interrupted.push(id),
+  })
+  stop = srv.stop
+
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x", sessionID: "ses_xyz" })
+  const pending = store.awaitVerdict(artifact.id)
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "declined", reason: "wrong direction" }),
+  })
+  expect(res.status).toBe(200)
+
+  const verdict = await pending
+  expect(verdict.status).toBe("declined")
+  if (verdict.status === "declined") expect(verdict.reason).toBe("wrong direction")
+  const a = (await store.get(artifact.id))!
+  expect(a.status).toBe("declined")
+  expect(a.declineReason).toBe("wrong direction")
+  // The agent's parked turn is aborted via the artifact's session.
+  expect(interrupted).toEqual(["ses_xyz"])
+})
+
+test("declining an approved plan returns 409 and does not interrupt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  const store = createStore({ root: dir, clock: () => 1, idgen: (() => { let n = 0; return () => `id${++n}` })() })
+  const events = createBroadcaster()
+  const interrupted: string[] = []
+  const srv = createServer({
+    store, events, port: 0, staticDir: null,
+    interruptSession: (id) => interrupted.push(id),
+  })
+  stop = srv.stop
+
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x", sessionID: "ses_xyz" })
+  await store.resolveVerdict(artifact.id, { status: "approved" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "declined", reason: "too late" }),
+  })
+  expect(res.status).toBe(409)
+  expect((await store.get(artifact.id))!.status).toBe("approved")
+  expect(interrupted).toEqual([])
+})
+
+test("declining a draft plan returns 409 (must be submitted first)", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x", draft: true })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "declined" }),
+  })
+  expect(res.status).toBe(409)
+})

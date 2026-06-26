@@ -138,6 +138,18 @@ export function createPublishTool(deps: ToolDeps) {
         kind: c.kind,
         quote: c.anchor?.quote,
       }))
+      // A declined plan is rejected outright: the session is normally aborted
+      // before this returns, but if the interrupt is unavailable this terminal
+      // result (with the reviewer's reason) tells the agent to stop, not loop.
+      if (verdict.status === "declined") {
+        return JSON.stringify({
+          status: "declined",
+          artifactId: artifact.id,
+          reason: verdict.reason,
+          comments,
+          stop: "This plan was declined. Do not retry or revise it; await the user's direction.",
+        })
+      }
       return JSON.stringify({ status: verdict.status, artifactId: artifact.id, comments })
     },
   })

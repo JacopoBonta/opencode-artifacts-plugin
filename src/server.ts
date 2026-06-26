@@ -14,6 +14,8 @@ export interface ServerOptions {
   resolveSessionTitle?: (sessionID: string) => Promise<string | undefined>
   /** the opencode session the user is currently in, for highlighting; optional */
   getActiveSession?: () => string | undefined
+  /** interrupt (abort) an opencode session's current turn; used to stop the agent on a declined plan */
+  interruptSession?: (sessionID: string) => void
 }
 
 const json = (data: unknown, status = 200) =>
@@ -139,15 +141,20 @@ export function createServer(opts: ServerOptions) {
         }
         let b: any
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
-        // Carry the reviewer's unresolved comments to the agent for BOTH
+        // Carry the reviewer's unresolved comments to the agent for ALL
         // verdicts — an approval with comments means "proceed, but honor these".
         const comments = (await store.getComments(id)).filter((c) => !c.resolved)
         await store.resolveVerdict(
           id,
           b.status === "approved"
             ? { status: "approved", comments }
-            : { status: "changes_requested", comments },
+            : b.status === "declined"
+              ? { status: "declined", reason: typeof b.reason === "string" ? b.reason : undefined, comments }
+              : { status: "changes_requested", comments },
         )
+        // Declining rejects the work outright: interrupt the agent's parked turn
+        // so it stops instead of waiting on (or acting on) the resolved tool call.
+        if (b.status === "declined" && va?.sessionID) opts.interruptSession?.(va.sessionID)
         events.broadcast({ type: "artifact.updated", id })
         return json({ ok: true })
       }

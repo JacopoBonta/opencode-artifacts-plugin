@@ -153,6 +153,20 @@ test("plan publish returns changes_requested with comment bodies", async () => {
   expect(parsed.comments[0].body).toBe("redo intro")
 })
 
+test("declined verdict returns a terminal stop payload carrying the reason", async () => {
+  const { tool, store } = setup()
+  const exec = tool.execute(
+    { type: "plan", title: "P", content: VALID_PLAN },
+    { sessionID: "s1" } as any,
+  )
+  await waitPending(store, "id1")
+  await store.resolveVerdict("id1", { status: "declined", reason: "abandon this" })
+  const parsed = JSON.parse(await exec as string)
+  expect(parsed.status).toBe("declined")
+  expect(parsed.reason).toBe("abandon this")
+  expect(parsed.stop).toBeDefined()
+})
+
 test("plan missing required sections is rejected and creates no artifact", async () => {
   const { tool, store } = setup()
   const out = await tool.execute(

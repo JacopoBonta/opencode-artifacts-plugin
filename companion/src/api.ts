@@ -8,6 +8,7 @@ export interface Artifact {
   status: string; currentRevision: number; createdAt: number; updatedAt: number
   sessionID?: string; sessionTitle?: string
   parentId?: string; isRoadmap?: boolean; agent?: string; archived?: boolean
+  declineReason?: string
 }
 export interface ArtifactDetail { artifact: Artifact; content: string; comments: Comment[] }
 
@@ -51,9 +52,10 @@ export async function postComment(
 }
 export async function postVerdict(
   id: string,
-  status: "approved" | "changes_requested",
+  status: "approved" | "changes_requested" | "declined",
+  reason?: string,
 ): Promise<void> {
-  await req(`/api/artifacts/${id}/verdict`, jsonPost({ status }))
+  await req(`/api/artifacts/${id}/verdict`, jsonPost(reason ? { status, reason } : { status }))
 }
 export async function setArchived(id: string, archived: boolean): Promise<void> {
   await req(`/api/artifacts/${id}/archive`, jsonPost({ archived }))

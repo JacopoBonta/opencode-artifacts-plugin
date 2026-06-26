@@ -24,7 +24,41 @@ test("auto-selects the first artifact on load and approves", async () => {
   // The markdown heading from the artifact content confirms detail auto-loaded.
   await waitFor(() => screen.getByRole("heading", { name: "Plan" }))
   await userEvent.click(screen.getByRole("button", { name: /approve/i }))
-  expect(verdict).toHaveBeenCalledWith("id1", "approved")
+  expect(verdict).toHaveBeenCalledWith("id1", "approved", undefined)
+})
+
+test("declining reveals an optional reason field and posts the declined verdict", async () => {
+  const verdict = vi.spyOn(api, "postVerdict").mockResolvedValue()
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "Plan" }))
+  await userEvent.click(screen.getByRole("button", { name: "Decline" }))
+  await userEvent.type(screen.getByPlaceholderText(/reason for declining/i), "wrong direction")
+  await userEvent.click(screen.getByRole("button", { name: /confirm decline/i }))
+  expect(verdict).toHaveBeenCalledWith("id1", "declined", "wrong direction")
+})
+
+test("declining without a reason posts undefined", async () => {
+  const verdict = vi.spyOn(api, "postVerdict").mockResolvedValue()
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "Plan" }))
+  await userEvent.click(screen.getByRole("button", { name: "Decline" }))
+  await userEvent.click(screen.getByRole("button", { name: /confirm decline/i }))
+  expect(verdict).toHaveBeenCalledWith("id1", "declined", undefined)
+})
+
+test("a declined plan is locked: no actions, no comment input, declined banner with reason", async () => {
+  vi.mocked(api.getArtifact).mockResolvedValue({
+    artifact: { id: "id1", type: "plan", title: "P", status: "declined", currentRevision: 1, createdAt: 0, updatedAt: 0, declineReason: "out of scope" },
+    content: "# Declined Plan",
+    comments: [],
+  })
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "Declined Plan" }))
+  expect(screen.getByText(/declined — the agent was stopped/i)).toBeInTheDocument()
+  expect(screen.getByText(/out of scope/i)).toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: /approve/i })).toBeNull()
+  expect(screen.queryByRole("button", { name: "Decline" })).toBeNull()
+  expect(screen.queryByPlaceholderText("Add a comment")).toBeNull()
 })
 
 test("shows a connection-lost banner when the event stream errors", async () => {

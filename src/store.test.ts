@@ -219,6 +219,26 @@ test("awaitVerdict resolves when resolveVerdict is called", async () => {
   expect((await store.get(artifact.id))!.status).toBe("approved")
 })
 
+test("resolveVerdict declined sets status + reason and resolves the pending promise", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const pending = store.awaitVerdict(artifact.id)
+  await store.resolveVerdict(artifact.id, { status: "declined", reason: "out of scope" })
+  expect(await pending).toEqual({ status: "declined", reason: "out of scope" })
+  const a = (await store.get(artifact.id))!
+  expect(a.status).toBe("declined")
+  expect(a.declineReason).toBe("out of scope")
+})
+
+test("resolveVerdict declined without a reason leaves declineReason undefined", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  await store.resolveVerdict(artifact.id, { status: "declined" })
+  const a = (await store.get(artifact.id))!
+  expect(a.status).toBe("declined")
+  expect(a.declineReason).toBeUndefined()
+})
+
 test("disposeAll rejects pending verdicts", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })

@@ -14,6 +14,9 @@
   --status-awaiting_review: #fbbf24;
   --status-approved: #34d399;
   --status-changes_requested: #f87171;
+  --status-declined: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.14);
+  --danger-fg: #fca5a5;
   --info-bg: rgba(59, 130, 246, 0.14);
   --info-fg: #93c5fd;
   --success-bg: rgba(16, 185, 129, 0.14);
@@ -44,6 +47,9 @@
   --status-awaiting_review: #b45309;
   --status-approved: #15803d;
   --status-changes_requested: #b91c1c;
+  --status-declined: #b91c1c;
+  --danger-bg: #fef2f2;
+  --danger-fg: #991b1b;
   --info-bg: #eff6ff;
   --info-fg: #1e40af;
   --success-bg: #ecfdf5;
@@ -111,6 +117,7 @@ button { font-family: inherit; }
 .status-awaiting_review { color: var(--status-awaiting_review); }
 .status-approved { color: var(--status-approved); }
 .status-changes_requested { color: var(--status-changes_requested); }
+.status-declined { color: var(--status-declined); }
 .status-draft { color: var(--text-muted); }
 
 /* main header */
@@ -125,6 +132,8 @@ button { font-family: inherit; }
 .historical-banner { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--info-bg); color: var(--info-fg); font-size: 12.5px; }
 .historical-banner button { background: none; border: none; color: var(--info-fg); text-decoration: underline; cursor: pointer; font-size: 12.5px; }
 .approved-banner { margin-bottom: 16px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--success-bg); color: var(--success-fg); font-size: 12.5px; font-weight: 600; }
+.declined-banner { margin-bottom: 16px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--danger-bg); color: var(--danger-fg); font-size: 12.5px; font-weight: 600; }
+.declined-reason { font-weight: 500; }
 .draft-banner { margin-top: auto; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--info-bg); color: var(--info-fg); font-size: 12.5px; }
 .conn-lost { grid-column: 1 / -1; padding: 8px 16px; background: var(--warn-bg); color: var(--warn-fg); border-bottom: 1px solid var(--border); font-size: 12.5px; }
 .error-banner { background: transparent; color: var(--status-changes_requested); font-weight: 500; }
@@ -187,6 +196,12 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
 .action-bar button:disabled:hover { background: var(--accent); border-color: var(--accent); }
 .action-bar button:not(:first-child):disabled:hover { background: var(--surface-2); border-color: var(--border); }
+.decline-form { display: flex; flex-direction: column; gap: 8px; }
+.decline-reason { width: 100%; min-height: 64px; resize: vertical; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
+.action-bar button.decline-btn { background: var(--surface-2); border-color: var(--border); color: var(--status-declined); }
+.action-bar button.decline-btn:hover { border-color: var(--status-declined); }
+.action-bar button.decline-confirm { background: var(--status-declined); border-color: var(--status-declined); color: #fff; }
+.action-bar button.decline-confirm:hover { opacity: 0.9; }
 
 /* misc */
 .empty { color: var(--text-muted); font-size: 13px; }
