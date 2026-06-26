@@ -31,24 +31,24 @@ export function createPublishTool(deps: ToolDeps) {
       "publish a plan FIRST — file edits are blocked until a plan is approved — " +
       "then implement, then publish a report. A plan MUST contain these ## " +
       "sections: Context/Analysis, Goals, Approach, Tasks (or Steps), " +
-      "Verification, Status; publishing a plan without them is rejected. " +
+      "Verification; publishing a plan without them is rejected. " +
       "For large work, set roadmap=true to publish a decomposition overview " +
-      "(sections: Context, Goals, Phases, Status); approving a roadmap does NOT " +
+      "(sections: Context, Goals, Phases); approving a roadmap does NOT " +
       "unblock edits. After the roadmap is approved, scratch EVERY phase upfront " +
       "as a draft sub-plan: publish_artifact(type:'plan', draft:true, " +
-      "parentId:<roadmap id>, ...) returns immediately without blocking. Record " +
-      "each returned artifactId in the roadmap's Phases section. Then run each " +
+      "parentId:<roadmap id>, ...) returns immediately without blocking; their " +
+      "artifact IDs and statuses are tracked for you automatically — do NOT edit " +
+      "the approved roadmap to record them. Then run each " +
       "phase as a cycle: refine its draft if needed and SUBMIT it by re-publishing " +
       "the same artifactId WITHOUT draft (this blocks until approved and unblocks " +
       "edits), implement, then publish a results report with the same parentId. " +
       "Drafts must already contain all required sections. " +
-      "Across revisions, update sections IN PLACE to reflect the current state — " +
-      "never append 'RESOLVED:' notes. " +
-      "While implementing, keep the plan's Status section and task checkboxes " +
-      "current by re-publishing the approved plan (same artifactId): re-publishing " +
-      "an APPROVED plan is a non-blocking progress update that stays approved and " +
-      "returns immediately — it does NOT require re-approval. Set resubmit=true " +
-      "only when you change the plan's scope/approach and want a fresh review.",
+      "While a plan is still in review, update sections IN PLACE across revisions " +
+      "to reflect the current state — never append 'RESOLVED:' notes. " +
+      "Once a plan is APPROVED it is FROZEN: re-publishing it is rejected. Do NOT " +
+      "re-publish an approved plan to record progress — track implementation " +
+      "progress with the todo tool instead. Set resubmit=true ONLY when you change " +
+      "the plan's scope/approach and want to send it back for a fresh review.",
     args: {
       type: tool.schema.enum(["plan", "report"]).describe("plan gates the work; report is informational"),
       title: tool.schema.string().describe("short artifact title"),
@@ -72,7 +72,7 @@ export function createPublishTool(deps: ToolDeps) {
       resubmit: tool.schema
         .boolean()
         .optional()
-        .describe("force a fresh review of an already-approved plan (instead of a non-blocking progress update)"),
+        .describe("re-publish an approved (frozen) plan by sending it back for a fresh review; required to edit an approved plan"),
     },
     async execute(args, context) {
       const sessionID = context.sessionID
@@ -88,6 +88,24 @@ export function createPublishTool(deps: ToolDeps) {
             missingSections: check.missing,
             template: args.roadmap ? ROADMAP_TEMPLATE : PLAN_TEMPLATE,
           })
+        }
+
+        // An approved plan is FROZEN. Re-publishing it (without resubmit) is
+        // rejected with an actionable message instead of a raw thrown error —
+        // the store also guards this, but catching it here keeps the agent's
+        // tool result structured. resubmit:true falls through to a fresh review.
+        if (args.artifactId && !args.resubmit) {
+          const existing = await store.get(args.artifactId)
+          if (existing?.status === "approved") {
+            return JSON.stringify({
+              error:
+                "This plan is approved and frozen — it cannot be edited. Track " +
+                "implementation progress with the todo tool. To change its scope " +
+                "or approach, re-publish with resubmit:true for a fresh review.",
+              artifactId: args.artifactId,
+              status: "approved",
+            })
+          }
         }
       }
 
@@ -115,18 +133,6 @@ export function createPublishTool(deps: ToolDeps) {
       if (artifact.status === "draft") {
         notify(`Phase draft saved: ${artifact.title}`, artifactUrl)
         return JSON.stringify({ artifactId: artifact.id, status: "draft", url: artifactUrl })
-      }
-
-      // Re-publishing an already-approved plan is a non-blocking progress update
-      // (Status/checkboxes) — it stays approved and never re-prompts for review.
-      if (artifact.status === "approved") {
-        notify(`Plan progress updated: ${artifact.title}`, artifactUrl)
-        return JSON.stringify({
-          status: "approved",
-          artifactId: artifact.id,
-          revision: artifact.currentRevision,
-          progress: true,
-        })
       }
 
       notify(`Plan awaiting review: ${artifact.title}`, artifactUrl)

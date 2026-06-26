@@ -35,7 +35,6 @@ export const REQUIRED_PLAN_SECTIONS: Section[] = [
   { canonical: "Approach", synonyms: ["approach", "design", "solution", "strategy"] },
   { canonical: "Tasks", synonyms: ["tasks", "task", "steps", "implementation", "work"] },
   { canonical: "Verification", synonyms: ["verification", "testing", "test plan", "validation", "how to test", "tests"] },
-  { canonical: "Status", synonyms: ["status", "progress"] },
 ]
 
 /** Required `##` sections for a roadmap (decomposition overview) plan. */
@@ -43,7 +42,6 @@ export const REQUIRED_ROADMAP_SECTIONS: Section[] = [
   { canonical: "Context", synonyms: ["context", "background", "analysis", "problem", "understanding"] },
   { canonical: "Goals", synonyms: ["goals", "goal", "objectives", "acceptance criteria", "acceptance"] },
   { canonical: "Phases", synonyms: ["phases", "phase", "milestones", "breakdown", "sub-plans", "subplans", "stages"] },
-  { canonical: "Status", synonyms: ["status", "progress"] },
 ]
 
 /** Skeleton handed to the agent when a standard plan is missing required structure. */
@@ -70,11 +68,6 @@ options you rejected and the reason.)
 How the change will be proven to work end-to-end (tests to run/add, manual
 checks, commands).
 
-## Status
-Update this section IN PLACE as work proceeds (mark tasks done above, note
-blockers here). Do NOT append "RESOLVED:" notes — edit the relevant section so
-the plan always reflects the current state.
-
 <!-- Recommended when relevant: ## Risks & Trade-offs, ## Open Questions /
 Assumptions, ## Affected Areas -->`
 
@@ -89,14 +82,12 @@ The end-to-end outcome across all phases (acceptance criteria for "all done").
 
 ## Phases
 An ordered breakdown. Each phase becomes its own plan -> implement -> results
-cycle. Scratch every phase as a draft sub-plan upfront and record its artifact
-id here (fill in <id> after scratching):
-1. Phase 1 — <name> (artifact <id>): scope / outcome
-2. Phase 2 — <name> (artifact <id>): scope / outcome
-3. ...
-
-## Status
-Which phase is in progress and what is done. Update IN PLACE.`
+cycle. Describe each phase by name and scope; you scratch them as draft sub-plans
+after approval, and their artifact IDs are tracked for you automatically (do NOT
+edit this roadmap to record them):
+1. Phase 1 — <name>: scope / outcome
+2. Phase 2 — <name>: scope / outcome
+3. ...`
 
 export type PlanValidation = { ok: true } | { ok: false; missing: string[] }
 
@@ -201,12 +192,12 @@ companion. This is enforced by the runtime, not optional:
 2. GET IT APPROVED. The plan blocks until the human approves or requests changes.
    On changes_requested, revise the SAME artifact (pass its artifactId) and
    re-publish, looping until approved.
-3. IMPLEMENT THE PLAN. Once approved, edits are unblocked. Follow the approved
-   plan; keep its "Status" section and task checkboxes current as you go by
-   re-publishing the approved plan (same artifactId). Re-publishing an approved
-   plan is a non-blocking PROGRESS UPDATE — it stays approved, returns
-   immediately, and does NOT require re-approval. Only set resubmit:true if you
-   change the plan's scope or approach and want a fresh review.
+3. IMPLEMENT THE PLAN. Once approved, edits are unblocked. The approved plan is
+   now FROZEN — it is the immutable record of what the human signed off on, so
+   re-publishing it is REJECTED. Do NOT re-publish the approved plan to record
+   progress. Track your task progress with the todo tool (todowrite) instead.
+   Only re-publish with resubmit:true if you change the plan's scope or approach
+   and want to send it back for a fresh review.
 4. REPORT. When the planned work is complete, publish a report with
    \`publish_artifact(type: "report", ...)\` summarizing what was done and what
    was not. Publishing a report COMPLETES the current plan and RE-CLOSES the edit
@@ -215,7 +206,7 @@ companion. This is enforced by the runtime, not optional:
    roadmap; continue to the next phase.)
 
 Standard plan structure — every plan MUST contain these \`##\` sections:
-Context/Analysis, Goals, Approach, Tasks (or Steps), Verification, Status.
+Context/Analysis, Goals, Approach, Tasks (or Steps), Verification.
 When relevant, also include: Alternatives considered, Risks & Trade-offs, Open
 Questions / Assumptions, Affected Areas. Template:
 
@@ -227,12 +218,15 @@ one plan. First publish a ROADMAP overview with
 ordered phases (see roadmap template below). Approving a roadmap does NOT unblock
 edits — it only agrees the decomposition.
 
-Once the roadmap is approved, SCRATCH EVERY PHASE UPFRONT as a draft sub-plan:
+Once the roadmap is approved, it too is FROZEN — do NOT re-publish it to record
+phase IDs or progress. SCRATCH EVERY PHASE UPFRONT as a draft sub-plan:
 \`publish_artifact(type: "plan", draft: true, parentId: <roadmap id>, ...)\`. A
 draft returns immediately (non-blocking) and does NOT unblock edits, so you can
 scratch them all in a row; this persists the whole breakdown so it survives a
 context compaction. Each draft must already contain the full plan structure.
-Record each returned artifactId in the roadmap's Phases section.
+Each phase's artifact ID and status are tracked for you automatically and kept
+in view — you do not need to (and cannot) edit the approved roadmap to record
+them.
 
 Then run EACH phase as its own cycle, in order:
 1. Refine that phase's draft if needed, then SUBMIT it for review by re-publishing
@@ -245,16 +239,17 @@ Move to the next phase and repeat.
 
 ${ROADMAP_TEMPLATE}
 
-Preserve structure across revisions. UPDATE SECTIONS IN PLACE to reflect the
-current state — mark tasks done, edit the Status section. Never append
-"RESOLVED: ..." notes or leave stale text; a plan must always read as the single
-current source of truth.
+Preserve structure across revisions WHILE A PLAN IS STILL IN REVIEW (draft,
+awaiting_review, or changes_requested): update sections IN PLACE to reflect the
+current state, never append "RESOLVED: ..." notes or leave stale text, so each
+submitted revision reads as the single current source of truth. Once approved,
+the plan is frozen and no longer revised.
 
 After a report completes a plan, any further edits require a FRESH plan for the
 new work — or, to continue the same plan, re-publish it with \`resubmit: true\`
-for a fresh approval. A normal progress-update re-publish does NOT reopen the
-gate. For a brand-new implementation request later in the session, always publish
-a FRESH plan (or roadmap) rather than reusing an already-approved one.`
+for a fresh approval. For a brand-new implementation request later in the
+session, always publish a FRESH plan (or roadmap) rather than reusing an
+already-approved one.`
 }
 
 /**
@@ -270,6 +265,13 @@ export function buildSessionContext(plan: Artifact, content: string): string {
       : plan.isRoadmap && plan.status === "approved"
         ? "approved roadmap — publish/approve a phase plan to edit"
         : `${plan.status} — edits BLOCKED`
+  // An approved plan/roadmap is frozen; anything still in review is revised in
+  // place. Guide the agent accordingly so it doesn't try to re-publish a frozen
+  // plan to record progress.
+  const guidance =
+    plan.status === "approved"
+      ? `Current ${kind} content (APPROVED & FROZEN — do NOT re-publish it to record progress; track progress with the todo tool, and resubmit only to change scope):`
+      : `Current ${kind} content (the source of truth while in review — keep it updated in place):`
   return `# Active ${kind} for this session
 
 - id: ${plan.id}
@@ -277,7 +279,7 @@ export function buildSessionContext(plan: Artifact, content: string): string {
 - revision: ${plan.currentRevision}
 - status: ${gate}
 
-Current ${kind} content (the source of truth — keep it updated in place):
+${guidance}
 
 ${content}`
 }
