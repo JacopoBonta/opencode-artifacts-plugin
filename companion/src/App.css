@@ -271,5 +271,7 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .session-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .session-card { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
 .session-card:hover { border-color: var(--accent); background: var(--surface-2); }
+.session-card.current { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.session-card.current .session-card-title { color: var(--accent); }
 .session-card-title { flex: 1; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-card-meta { flex: none; color: var(--text-muted); font-size: 12px; }
