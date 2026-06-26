@@ -4,8 +4,11 @@
 import { readStored, writeStored } from "./storage"
 
 export type ReadingWidth = "comfortable" | "stretched"
+// "session" shows only the focused session's artifacts; "all" shows every session.
+export type Scope = "session" | "all"
 
 const READING_KEY = "oc-artifacts-reading"
+const SCOPE_KEY = "oc-artifacts-scope"
 const LEFT_KEY = "oc-artifacts-rail-left"
 const RIGHT_KEY = "oc-artifacts-rail-right"
 
@@ -31,6 +34,16 @@ export function getReadingWidth(): ReadingWidth {
 export function setReadingWidth(w: ReadingWidth): void {
   writeStored(READING_KEY, w)
   document.documentElement.dataset.reading = w
+}
+
+// Default to "session": the rail opens focused on the current session, which is
+// what the user wants most of the time. Other sessions are one click away.
+export function getScope(): Scope {
+  return readStored(SCOPE_KEY) === "all" ? "all" : "session"
+}
+
+export function setScope(s: Scope): void {
+  writeStored(SCOPE_KEY, s)
 }
 
 function readWidth(key: string, fallback: number, clamp: (n: number) => number): number {

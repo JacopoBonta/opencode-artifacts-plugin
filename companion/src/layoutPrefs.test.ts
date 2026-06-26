@@ -1,6 +1,7 @@
 import { test, expect, beforeEach } from "vitest"
 import {
   getReadingWidth, setReadingWidth,
+  getScope, setScope,
   getRailLeft, setRailLeft, getRailRight, setRailRight,
   clampLeft, clampRight,
   RAIL_LEFT_DEFAULT, RAIL_RIGHT_DEFAULT,
@@ -17,6 +18,14 @@ test("reading width defaults to comfortable and round-trips, applying the datase
   setReadingWidth("stretched")
   expect(getReadingWidth()).toBe("stretched")
   expect(document.documentElement.dataset.reading).toBe("stretched")
+})
+
+test("scope defaults to session and round-trips through storage", () => {
+  expect(getScope()).toBe("session")
+  setScope("all")
+  expect(getScope()).toBe("all")
+  setScope("session")
+  expect(getScope()).toBe("session")
 })
 
 test("rail widths default to the original grid columns", () => {

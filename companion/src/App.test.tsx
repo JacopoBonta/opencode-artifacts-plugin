@@ -68,6 +68,27 @@ test("prefers the active session's most recent artifact over a globally-newer on
   await waitFor(() => screen.getByRole("heading", { name: "active_old body" }))
 })
 
+test("with no active session and several sessions, shows the intro; picking one opens it", async () => {
+  vi.mocked(api.listArtifacts).mockResolvedValue([
+    { id: "a1", type: "plan", title: "Plan A", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 10, sessionID: "ses_a", sessionTitle: "Alpha" },
+    { id: "b1", type: "plan", title: "Plan B", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 20, sessionID: "ses_b", sessionTitle: "Beta" },
+  ])
+  vi.mocked(api.getArtifact).mockImplementation(async (id: string) => ({
+    artifact: { id, type: "plan", title: id, status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 0, sessionID: "ses_a" },
+    content: `# ${id} body`,
+    comments: [],
+  }))
+  render(<App />)
+  // No session is focused, so the intro lists the sessions instead of auto-opening one.
+  await waitFor(() => screen.getByRole("heading", { name: "Sessions" }))
+  expect(screen.getByText("Alpha")).toBeInTheDocument()
+  expect(screen.getByText("Beta")).toBeInTheDocument()
+  expect(screen.queryByRole("heading", { name: /body/ })).toBeNull()
+  // Picking a session focuses it and drops into the normal artifact view.
+  await userEvent.click(screen.getByText("Alpha"))
+  await waitFor(() => screen.getByRole("heading", { name: "a1 body" }))
+})
+
 test("declining reveals an optional reason field and posts the declined verdict", async () => {
   const verdict = vi.spyOn(api, "postVerdict").mockResolvedValue()
   render(<App />)

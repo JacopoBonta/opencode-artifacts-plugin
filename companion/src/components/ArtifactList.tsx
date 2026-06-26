@@ -1,14 +1,31 @@
 import React, { useState } from "react"
 import type { Artifact } from "../api"
+import type { Scope } from "../layoutPrefs"
 
 interface Group { key: string; label: string; artifacts: Artifact[]; latest: number }
 
 export interface TreeNode { artifact: Artifact; children: Artifact[] }
 
+/** Summary of one session for the intro landing page. */
+export interface SessionSummary {
+  key: string
+  label: string
+  count: number
+  latest: number
+  hasUnseen: boolean
+}
+
+const UNGROUPED = "__ungrouped__"
+
+/** The group key an artifact belongs to (its session, or the ungrouped bucket). */
+export function sessionKey(a: Artifact): string {
+  return a.sessionID ?? UNGROUPED
+}
+
 function groupBySession(artifacts: Artifact[]): Group[] {
   const map = new Map<string, Artifact[]>()
   for (const a of artifacts) {
-    const key = a.sessionID ?? "__ungrouped__"
+    const key = sessionKey(a)
     const list = map.get(key) ?? []
     list.push(a)
     map.set(key, list)
@@ -16,7 +33,7 @@ function groupBySession(artifacts: Artifact[]): Group[] {
   const groups: Group[] = []
   for (const [key, list] of map) {
     const label =
-      key === "__ungrouped__"
+      key === UNGROUPED
         ? "Ungrouped"
         : list.find((a) => a.sessionTitle)?.sessionTitle ?? `Session ${key.slice(-6)}`
     const latest = Math.max(...list.map((a) => a.updatedAt))
@@ -24,6 +41,23 @@ function groupBySession(artifacts: Artifact[]): Group[] {
   }
   groups.sort((a, b) => b.latest - a.latest)
   return groups
+}
+
+/**
+ * Recently-active sessions (newest first), for the intro landing page. Excludes
+ * archived artifacts. Pure + exported so it can be unit-tested without a DOM.
+ */
+export function recentSessions(
+  artifacts: Artifact[],
+  unseen?: Set<string>,
+): SessionSummary[] {
+  return groupBySession(artifacts.filter((a) => !a.archived)).map((g) => ({
+    key: g.key,
+    label: g.label,
+    count: g.artifacts.length,
+    latest: g.latest,
+    hasUnseen: g.artifacts.some((a) => unseen?.has(a.id)),
+  }))
 }
 
 /**
@@ -64,8 +98,13 @@ export function ArtifactList(props: {
   artifacts: Artifact[]
   selectedId?: string
   activeSessionID?: string
+  focusedSessionID?: string
+  // Omitted defaults to the "all" view (every session grouped).
+  scope?: Scope
   unseenIds?: Set<string>
   onSelect: (id: string) => void
+  onShowAll?: () => void
+  onShowSessions?: () => void
   onUnarchive?: (id: string) => void
   onDelete?: (id: string) => void
 }) {
@@ -78,7 +117,7 @@ export function ArtifactList(props: {
   const archivedOpen = collapsed["__archived__"] === true
 
   const selectedKey =
-    props.artifacts.find((a) => a.id === props.selectedId)?.sessionID ?? "__ungrouped__"
+    props.artifacts.find((a) => a.id === props.selectedId)?.sessionID ?? UNGROUPED
 
   function isGroupOpen(g: Group): boolean {
     // Explicit user choice wins; otherwise expand the selected group only.
@@ -106,6 +145,51 @@ export function ArtifactList(props: {
       </li>
     )
   }
+
+  // One node: a roadmap row (with expandable phase children) or a plain leaf.
+  const renderNode = (node: TreeNode) => {
+    if (node.children.length === 0) return renderItem(node.artifact)
+    const a = node.artifact
+    const nodeOpen = isNodeOpen(a.id)
+    const prog = phaseProgress(node)
+    const badgeType = a.isRoadmap ? "roadmap" : a.type
+    return (
+      <li key={a.id} className="roadmap-node">
+        <div
+          className={`roadmap-row ${a.id === props.selectedId ? "selected" : ""}`}
+          onClick={() => props.onSelect(a.id)}
+        >
+          <button
+            type="button"
+            className="node-chevron"
+            aria-expanded={nodeOpen}
+            onClick={(e) => {
+              e.stopPropagation()
+              setCollapsed((c) => ({ ...c, [`rm:${a.id}`]: nodeOpen }))
+            }}
+          >
+            {nodeOpen ? "▾" : "▸"}
+          </button>
+          <span className={`badge badge-${badgeType}`}>{badgeType}</span>
+          <span className="title">{a.title}</span>
+          {unseen.has(a.id) && <span className="activity-dot" title="New activity" />}
+          {prog && prog.total > 0 && (
+            <span className="phase-progress">{prog.done}/{prog.total}</span>
+          )}
+          <span className={`status status-${a.status}`}>
+            {a.status.replace(/_/g, " ")}
+          </span>
+        </div>
+        {nodeOpen && (
+          <ul className="artifact-sublist">{node.children.map(renderItem)}</ul>
+        )}
+      </li>
+    )
+  }
+
+  const renderTree = (tree: TreeNode[]) => (
+    <ul className="artifact-list">{tree.map(renderNode)}</ul>
+  )
 
   const renderArchivedNode = (node: TreeNode) => {
     const a = node.artifact
@@ -149,9 +233,83 @@ export function ArtifactList(props: {
     )
   }
 
+  const renderArchived = () =>
+    archived.length > 0 && (
+      <div className="artifact-group archived-group">
+        <button
+          type="button"
+          className="group-header"
+          aria-expanded={archivedOpen}
+          onClick={() => setCollapsed((c) => ({ ...c, __archived__: !archivedOpen }))}
+        >
+          <span className="group-chevron">{archivedOpen ? "▾" : "▸"}</span>
+          <span className="group-title">Archived</span>
+          <span className="group-count">{archived.length}</span>
+        </button>
+        {archivedOpen && (
+          <ul className="artifact-list">{buildTree(archived).map(renderArchivedNode)}</ul>
+        )}
+      </div>
+    )
+
+  // "This session" scope: render only the focused session, with a hint linking to
+  // the rest. Archived items stay tucked away in the "All" view.
+  if (props.scope === "session") {
+    if (!props.focusedSessionID) {
+      return (
+        <div className="artifact-groups">
+          <p className="rail-empty">Pick a session →</p>
+        </div>
+      )
+    }
+    const focused = groups.find((g) => g.key === props.focusedSessionID)
+    const otherCount = active.length - (focused?.artifacts.length ?? 0)
+    const isCurrent = props.activeSessionID === props.focusedSessionID
+    return (
+      <div className="artifact-groups">
+        <div className="artifact-group">
+          <button
+            type="button"
+            className={`group-header session-scope-header${isCurrent ? " current" : ""}`}
+            title="Back to all sessions"
+            onClick={() => props.onShowSessions?.()}
+          >
+            <span className="group-chevron">‹</span>
+            <span className="group-title">{focused?.label ?? "Current session"}</span>
+            {isCurrent && <span className="current-badge">current</span>}
+            <span className="group-count">{focused?.artifacts.length ?? 0}</span>
+          </button>
+          {focused ? (
+            renderTree(buildTree(focused.artifacts))
+          ) : (
+            <p className="rail-empty">No artifacts in this session yet.</p>
+          )}
+        </div>
+        {otherCount > 0 && (
+          <button
+            type="button"
+            className="other-sessions-hint"
+            onClick={() => props.onShowAll?.()}
+          >
+            {otherCount} in other session{otherCount === 1 ? "" : "s"} →
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // "All" scope: every session, with the focused/active one pinned to the top.
+  const ordered = props.focusedSessionID
+    ? [...groups].sort((a, b) => {
+        const af = a.key === props.focusedSessionID ? 0 : 1
+        const bf = b.key === props.focusedSessionID ? 0 : 1
+        return af - bf
+      })
+    : groups
+
   return (
     <div className="artifact-groups">
-      {groups.map((g) => {
+      {ordered.map((g) => {
         const open = isGroupOpen(g)
         const tree = buildTree(g.artifacts)
         const isCurrent = props.activeSessionID != null && g.key === props.activeSessionID
@@ -172,69 +330,11 @@ export function ArtifactList(props: {
               {isCurrent && <span className="current-badge">current</span>}
               <span className="group-count">{g.artifacts.length}</span>
             </button>
-            {open && (
-              <ul className="artifact-list">
-                {tree.map((node) => {
-                  if (node.children.length === 0) return renderItem(node.artifact)
-                  const a = node.artifact
-                  const nodeOpen = isNodeOpen(a.id)
-                  const prog = phaseProgress(node)
-                  const badgeType = a.isRoadmap ? "roadmap" : a.type
-                  return (
-                    <li key={a.id} className="roadmap-node">
-                      <div
-                        className={`roadmap-row ${a.id === props.selectedId ? "selected" : ""}`}
-                        onClick={() => props.onSelect(a.id)}
-                      >
-                        <button
-                          type="button"
-                          className="node-chevron"
-                          aria-expanded={nodeOpen}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setCollapsed((c) => ({ ...c, [`rm:${a.id}`]: nodeOpen }))
-                          }}
-                        >
-                          {nodeOpen ? "▾" : "▸"}
-                        </button>
-                        <span className={`badge badge-${badgeType}`}>{badgeType}</span>
-                        <span className="title">{a.title}</span>
-                        {unseen.has(a.id) && <span className="activity-dot" title="New activity" />}
-                        {prog && prog.total > 0 && (
-                          <span className="phase-progress">{prog.done}/{prog.total}</span>
-                        )}
-                        <span className={`status status-${a.status}`}>
-                          {a.status.replace(/_/g, " ")}
-                        </span>
-                      </div>
-                      {nodeOpen && (
-                        <ul className="artifact-sublist">{node.children.map(renderItem)}</ul>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+            {open && renderTree(tree)}
           </div>
         )
       })}
-      {archived.length > 0 && (
-        <div className="artifact-group archived-group">
-          <button
-            type="button"
-            className="group-header"
-            aria-expanded={archivedOpen}
-            onClick={() => setCollapsed((c) => ({ ...c, __archived__: !archivedOpen }))}
-          >
-            <span className="group-chevron">{archivedOpen ? "▾" : "▸"}</span>
-            <span className="group-title">Archived</span>
-            <span className="group-count">{archived.length}</span>
-          </button>
-          {archivedOpen && (
-            <ul className="artifact-list">{buildTree(archived).map(renderArchivedNode)}</ul>
-          )}
-        </div>
-      )}
+      {renderArchived()}
     </div>
   )
 }
