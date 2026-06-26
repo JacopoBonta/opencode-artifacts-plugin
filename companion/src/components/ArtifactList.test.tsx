@@ -78,6 +78,75 @@ test("bubbles an activity dot to a collapsed group's header", () => {
   expect(screen.queryByText("Plan B")).toBeNull()
 })
 
+test("session scope shows only the focused session and counts the rest", () => {
+  render(
+    <ArtifactList
+      artifacts={arts}
+      scope="session"
+      focusedSessionID="ses_111"
+      onSelect={() => {}}
+    />,
+  )
+  // Focused session's artifacts are visible...
+  expect(screen.getByText("Plan A")).toBeInTheDocument()
+  expect(screen.getByText("Report A")).toBeInTheDocument()
+  // ...other sessions are hidden behind the hint (a2 is the only other-session
+  // sibling besides b1 and c1 → 2 artifacts in other sessions).
+  expect(screen.queryByText("Plan B")).toBeNull()
+  expect(screen.queryByText("Plan C")).toBeNull()
+  expect(screen.getByText("2 in other sessions →")).toBeInTheDocument()
+})
+
+test("session scope hint switches to the all view", async () => {
+  const onShowAll = vi.fn()
+  render(
+    <ArtifactList
+      artifacts={arts}
+      scope="session"
+      focusedSessionID="ses_111"
+      onSelect={() => {}}
+      onShowAll={onShowAll}
+    />,
+  )
+  await userEvent.click(screen.getByText("2 in other sessions →"))
+  expect(onShowAll).toHaveBeenCalled()
+})
+
+test("session scope header returns to the sessions list", async () => {
+  const onShowSessions = vi.fn()
+  render(
+    <ArtifactList
+      artifacts={arts}
+      scope="session"
+      focusedSessionID="ses_111"
+      onSelect={() => {}}
+      onShowSessions={onShowSessions}
+    />,
+  )
+  await userEvent.click(screen.getByText("Build login"))
+  expect(onShowSessions).toHaveBeenCalled()
+})
+
+test("session scope with no focused session prompts to pick one", () => {
+  render(<ArtifactList artifacts={arts} scope="session" onSelect={() => {}} />)
+  expect(screen.getByText("Pick a session →")).toBeInTheDocument()
+  expect(screen.queryByText("Plan A")).toBeNull()
+})
+
+test("all scope pins the focused session to the top", () => {
+  const { container } = render(
+    <ArtifactList
+      artifacts={arts}
+      scope="all"
+      focusedSessionID="ses_222"
+      onSelect={() => {}}
+    />,
+  )
+  const headers = Array.from(container.querySelectorAll(".group-title")).map((e) => e.textContent)
+  // ses_222 ("Fix bug") is pinned first despite ses_111 having later activity.
+  expect(headers[0]).toBe("Fix bug")
+})
+
 const withArchived: Artifact[] = [
   ...arts,
   { id: "z1", type: "plan", title: "Old Plan", status: "approved", currentRevision: 1, createdAt: 5, updatedAt: 5, sessionID: "ses_111", sessionTitle: "Build login", archived: true },

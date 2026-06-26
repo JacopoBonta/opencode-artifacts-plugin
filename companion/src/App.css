@@ -251,3 +251,25 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .archived-actions button { padding: 3px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-size: 11px; font-weight: 600; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
 .archived-actions button:hover { color: var(--text); border-color: var(--accent); }
 .archived-actions button.danger:hover { color: var(--status-changes_requested); border-color: var(--status-changes_requested); }
+
+/* scope toggle (This session / All) */
+.scope-toggle { display: flex; gap: 2px; margin-bottom: 14px; padding: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.scope-toggle button { flex: 1; padding: 5px 8px; border: none; border-radius: 5px; background: none; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.scope-toggle button:hover { color: var(--text); }
+.scope-toggle button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+/* "This session" scope: back-to-sessions header chevron + other-sessions hint */
+.session-scope-header { cursor: pointer; }
+.session-scope-header .group-chevron { font-size: 14px; }
+.other-sessions-hint { margin-top: 10px; padding: 7px 8px; width: 100%; text-align: left; background: none; border: none; border-top: 1px dashed var(--border); color: var(--text-muted); font-size: 12px; font-weight: 550; cursor: pointer; transition: color 0.15s; }
+.other-sessions-hint:hover { color: var(--accent); }
+.rail-empty { color: var(--text-muted); font-size: 12.5px; padding: 6px 4px; }
+
+/* sessions intro landing page */
+.sessions-intro h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; }
+.sessions-intro-sub { margin: 0 0 20px; color: var(--text-muted); font-size: 13px; }
+.session-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.session-card { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.session-card:hover { border-color: var(--accent); background: var(--surface-2); }
+.session-card-title { flex: 1; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-card-meta { flex: none; color: var(--text-muted); font-size: 12px; }

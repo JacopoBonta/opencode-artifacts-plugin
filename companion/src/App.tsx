@@ -1,17 +1,20 @@
-import React, { useEffect, useState, useCallback, useRef } from "react"
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import "./App.css"
 import * as api from "./api"
 import type { Anchor, Artifact, ArtifactDetail } from "./api"
-import { ArtifactList } from "./components/ArtifactList"
+import { ArtifactList, recentSessions, sessionKey } from "./components/ArtifactList"
 import { ArtifactView } from "./components/ArtifactView"
 import { CommentThread } from "./components/CommentThread"
 import { ActionBar } from "./components/ActionBar"
 import { RevisionSwitcher } from "./components/RevisionSwitcher"
 import { ThemeToggle } from "./components/ThemeToggle"
 import { ReadingWidthToggle } from "./components/ReadingWidthToggle"
+import { ScopeToggle } from "./components/ScopeToggle"
+import { SessionsIntro } from "./components/SessionsIntro"
 import { ResizeHandle } from "./components/ResizeHandle"
 import {
   getRailLeft, getRailRight, setRailLeft, setRailRight, clampLeft, clampRight,
+  getScope, setScope as persistScope, type Scope,
 } from "./layoutPrefs"
 
 export function App() {
@@ -26,6 +29,11 @@ export function App() {
   // of artifact ids with new/updated activity not yet opened — drives the
   // current-session highlight and the activity dots.
   const [activeSessionID, setActiveSessionID] = useState<string>()
+  // The session the rail centers on in "This session" scope. Distinct from
+  // activeSessionID so the user can focus a session manually from the intro page;
+  // it follows the live session whenever that changes (see the effect below).
+  const [focusedSessionID, setFocusedSessionID] = useState<string>()
+  const [scope, setScopeState] = useState<Scope>(getScope)
   const [unseen, setUnseen] = useState<Set<string>>(new Set())
   const [submittingVerdict, setSubmittingVerdict] = useState(false)
   // undefined = viewing the latest revision
@@ -134,22 +142,43 @@ export function App() {
     // events during the reconnect window) when the selection changes.
   }, [refreshList, refreshDetail])
 
-  // Auto-select the active artifact once the list loads and nothing is selected:
-  // the most recently updated non-archived artifact, preferring the current
-  // session. Order-independent so it's stable across refreshes — the raw list
-  // arrives in filesystem order, not recency order, so picking by array position
-  // would lock onto an arbitrary old artifact.
+  // Follow the live session: when the user moves to a session in opencode, focus
+  // it. Keyed on activeSessionID, so a manual "back to sessions" (which clears the
+  // focus) isn't immediately re-overridden — only a real session switch re-focuses.
   useEffect(() => {
-    if (selectedId || !artifacts.length) return
-    const pool = artifacts.filter((a) => !a.archived)
-    const candidates = pool.length ? pool : artifacts
-    const inSession = activeSessionID
-      ? candidates.filter((a) => a.sessionID === activeSessionID)
-      : []
-    const from = inSession.length ? inSession : candidates
-    const target = from.reduce((best, a) => (a.updatedAt > best.updatedAt ? a : best))
+    if (activeSessionID) setFocusedSessionID(activeSessionID)
+  }, [activeSessionID])
+
+  const setScope = useCallback((s: Scope) => {
+    setScopeState(s)
+    persistScope(s)
+  }, [])
+
+  // Recent sessions for the intro page, and the effective focus. With a single
+  // session there's nothing to choose, so focus it implicitly rather than showing
+  // a one-card intro; with several, the intro lets the user pick.
+  const sessions = useMemo(() => recentSessions(artifacts, unseen), [artifacts, unseen])
+  const focusKey = focusedSessionID ?? (sessions.length === 1 ? sessions[0].key : undefined)
+
+  const focusSession = useCallback((key: string) => setFocusedSessionID(key), [])
+  const showSessions = useCallback(() => {
+    setFocusedSessionID(undefined)
+    setSelectedId(undefined)
+    setDetail(undefined)
+  }, [])
+
+  // Auto-select the focused session's most recently updated artifact once the list
+  // loads and nothing is selected. Order-independent so it's stable across
+  // refreshes — the raw list arrives in filesystem order, not recency order, so
+  // picking by array position would lock onto an arbitrary old artifact. With no
+  // focused session we leave the selection empty so the sessions intro shows.
+  useEffect(() => {
+    if (selectedId || !artifacts.length || !focusKey) return
+    const pool = artifacts.filter((a) => !a.archived && sessionKey(a) === focusKey)
+    if (!pool.length) return
+    const target = pool.reduce((best, a) => (a.updatedAt > best.updatedAt ? a : best))
     select(target.id)
-  }, [artifacts, selectedId, activeSessionID, select])
+  }, [artifacts, selectedId, focusKey, select])
 
   // Clear the selection when the selected artifact is gone (e.g. deleted).
   useEffect(() => {
@@ -283,12 +312,17 @@ export function App() {
             <ThemeToggle />
           </div>
         </div>
+        <ScopeToggle scope={scope} onChange={setScope} />
         <ArtifactList
           artifacts={artifacts}
           selectedId={selectedId}
           activeSessionID={activeSessionID}
+          focusedSessionID={focusKey}
+          scope={scope}
           unseenIds={unseen}
           onSelect={select}
+          onShowAll={() => setScope("all")}
+          onShowSessions={showSessions}
           onUnarchive={unarchive}
           onDelete={remove}
         />
@@ -347,6 +381,8 @@ export function App() {
               flashKey={flashAnchor?.key}
             />
           </>
+        ) : !focusKey && !selectedId ? (
+          <SessionsIntro sessions={sessions} onPick={focusSession} />
         ) : (
           <p className="empty">Select an artifact.</p>
         )}
