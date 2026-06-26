@@ -134,14 +134,22 @@ export function App() {
     // events during the reconnect window) when the selection changes.
   }, [refreshList, refreshDetail])
 
-  // Auto-select the first non-archived artifact once the list loads and nothing
-  // is selected (fall back to the first artifact if all are archived).
+  // Auto-select the active artifact once the list loads and nothing is selected:
+  // the most recently updated non-archived artifact, preferring the current
+  // session. Order-independent so it's stable across refreshes — the raw list
+  // arrives in filesystem order, not recency order, so picking by array position
+  // would lock onto an arbitrary old artifact.
   useEffect(() => {
-    if (!selectedId && artifacts.length) {
-      const first = artifacts.find((a) => !a.archived) ?? artifacts[0]
-      select(first.id)
-    }
-  }, [artifacts, selectedId, select])
+    if (selectedId || !artifacts.length) return
+    const pool = artifacts.filter((a) => !a.archived)
+    const candidates = pool.length ? pool : artifacts
+    const inSession = activeSessionID
+      ? candidates.filter((a) => a.sessionID === activeSessionID)
+      : []
+    const from = inSession.length ? inSession : candidates
+    const target = from.reduce((best, a) => (a.updatedAt > best.updatedAt ? a : best))
+    select(target.id)
+  }, [artifacts, selectedId, activeSessionID, select])
 
   // Clear the selection when the selected artifact is gone (e.g. deleted).
   useEffect(() => {
