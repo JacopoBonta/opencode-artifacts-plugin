@@ -53,7 +53,7 @@ p`
 test("validatePlanStructure reports missing sections", () => {
   const res = validatePlanStructure("# T\n## Context\nonly context")
   expect(res.ok).toBe(false)
-  if (!res.ok) expect(res.missing).toEqual(["Goals", "Approach", "Tasks", "Verification", "Status"])
+  if (!res.ok) expect(res.missing).toEqual(["Goals", "Approach", "Tasks", "Verification"])
 })
 
 test("validatePlanStructure ignores headings inside fenced code blocks", () => {
@@ -71,7 +71,7 @@ Here is a template I am NOT actually using:
 That code block should not count.`
   const res = validatePlanStructure(plan)
   expect(res.ok).toBe(false)
-  if (!res.ok) expect(res.missing).toEqual(["Goals", "Approach", "Tasks", "Verification", "Status"])
+  if (!res.ok) expect(res.missing).toEqual(["Goals", "Approach", "Tasks", "Verification"])
 
   // Real headings after a closed fence are still detected.
   const ok = `# T

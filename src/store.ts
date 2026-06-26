@@ -23,7 +23,7 @@ export interface PublishInput {
   isRoadmap?: boolean
   /** scratch a plan as a non-blocking draft (not yet submitted for review) */
   draft?: boolean
-  /** force a fresh review of an already-approved plan (instead of a progress update) */
+  /** re-publish an approved (frozen) plan by sending it back for a fresh review */
   resubmit?: boolean
 }
 
@@ -71,17 +71,24 @@ export function createStore(opts: StoreOptions) {
       if (!existing) {
         throw new Error(`unknown artifactId: ${input.artifactId}`)
       }
+      // An APPROVED plan (including a roadmap) is FROZEN: its content is the
+      // immutable record of what the human signed off on, so re-publishing it is
+      // rejected. Track implementation progress with the todo tool, not by
+      // rewriting the plan. To change the plan's scope/approach, pass
+      // `resubmit: true` — that sends it back to review for a fresh approval.
+      if (existing.type === "plan" && existing.status === "approved" && !input.resubmit) {
+        throw new Error(
+          `approved plan is frozen and cannot be edited: ${existing.id}. ` +
+            `Track progress with the todo tool; to change its scope or approach, ` +
+            `re-publish with resubmit:true for a fresh review.`,
+        )
+      }
       wasDraft = existing.status === "draft"
       // Status follows the artifact's own type, not the (possibly mismatched)
-      // type passed on re-publish. Re-publishing an APPROVED plan is a
-      // non-blocking progress update that stays approved (Status/checkbox edits
-      // don't need re-approval); `resubmit` forces a fresh review instead.
-      const status =
-        existing.type !== "plan"
-          ? "published"
-          : existing.status === "approved" && !input.draft && !input.resubmit
-            ? "approved"
-            : planStatus
+      // type passed on re-publish. Reports stay published; plans re-enter their
+      // pre-approval state (draft or awaiting_review) — the approved case is
+      // rejected above, so a re-published plan is always heading back to review.
+      const status = existing.type !== "plan" ? "published" : planStatus
       next = {
         ...existing,
         currentRevision: existing.currentRevision + 1,
@@ -89,8 +96,10 @@ export function createStore(opts: StoreOptions) {
         status,
         updatedAt: now,
         // A fresh review (resubmit) clears completion so this plan governs the
-        // gate again; a normal progress update keeps `completed` (a completed
-        // plan must NOT silently reopen the gate via a Status/checkbox edit).
+        // gate again. `completed` is only ever set on an approved plan, and an
+        // approved plan can only be re-published via resubmit (the frozen guard
+        // above rejects the rest), so this preserves existing.completed for the
+        // unreachable non-resubmit case purely defensively.
         completed: input.resubmit ? false : existing.completed,
       }
     } else {
@@ -284,9 +293,9 @@ export function createStore(opts: StoreOptions) {
    */
   function getActivePlan(sessionID: string): Artifact | undefined {
     // The active plan governs the edit gate: the most recently *updated*
-    // non-draft, NON-ROADMAP plan for the session. Roadmaps are excluded so that
-    // updating a roadmap's Status (a progress update) can't flip it to "active"
-    // and close the gate mid-phase; drafts are excluded as not-yet-submitted.
+    // non-draft, NON-ROADMAP plan for the session. Roadmaps are excluded because
+    // a roadmap is a decomposition overview, not an editable plan — it must never
+    // become the gate-governing plan; drafts are excluded as not-yet-submitted.
     // Ordering by updatedAt means the phase currently submitted/approved is
     // active even when later-created phase drafts already exist. Completed plans
     // (a report marked the work done) are excluded so the gate re-closes until a

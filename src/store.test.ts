@@ -108,8 +108,11 @@ test("getActivePlan skips drafts and tracks the most-recently-updated non-draft 
   // submit phase 1 → it becomes the active plan (most recently updated non-draft)
   await store.publish({ type: "plan", title: "P1", content: "p1b", artifactId: p1.id, ...s })
   expect(store.getActivePlan("s1")!.id).toBe(p1.id)
-  // a progress update to the roadmap must NOT steal "active" from the phase
-  await store.publish({ type: "plan", title: "R", content: "r2", artifactId: road.id, ...s })
+  // the roadmap is approved → frozen: re-publishing it is rejected, and the
+  // active plan stays the phase
+  await expect(
+    store.publish({ type: "plan", title: "R", content: "r2", artifactId: road.id, ...s }),
+  ).rejects.toThrow(/frozen/i)
   expect(store.getActivePlan("s1")!.id).toBe(p1.id)
 })
 
@@ -127,16 +130,20 @@ test("a report completes the session's standalone active plan; the gate re-close
   expect(store.getLastCompletedPlan("s1")!.id).toBe(plan.id)
 })
 
-test("a normal progress update keeps a completed plan completed; resubmit re-opens it", async () => {
+test("an approved+completed plan is frozen; resubmit re-opens it", async () => {
   const store = newStore()
   const s = { sessionID: "s1" }
   const { artifact: plan } = await store.publish({ type: "plan", title: "P", content: "v1", ...s })
   await store.resolveVerdict(plan.id, { status: "approved" })
   await store.publish({ type: "report", title: "R", content: "done", ...s })
 
-  // A progress update must NOT reopen the gate.
-  await store.publish({ type: "plan", title: "P", content: "v2", artifactId: plan.id, ...s })
+  // The plan is approved (and completed) → frozen: re-publishing it is rejected,
+  // the content is untouched, and the gate stays closed.
+  await expect(
+    store.publish({ type: "plan", title: "P", content: "v2", artifactId: plan.id, ...s }),
+  ).rejects.toThrow(/frozen/i)
   expect((await store.get(plan.id))!.completed).toBe(true)
+  expect((await store.get(plan.id))!.currentRevision).toBe(1)
   expect(store.getActivePlan("s1")).toBeUndefined()
 
   // resubmit clears completion and re-enters review → active again.
@@ -177,19 +184,34 @@ test("a report with no active plan is a no-op; multiple reports are idempotent",
   expect(store.getActivePlan("s1")).toBeUndefined()
 })
 
-test("re-publishing an approved plan stays approved (progress update); resubmit re-opens review", async () => {
+test("an approved plan is frozen: re-publish without resubmit is rejected; resubmit re-opens review", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })
   await store.resolveVerdict(artifact.id, { status: "approved" })
 
-  // progress update: stays approved, bumps the revision, no re-review
-  const { artifact: prog } = await store.publish({ type: "plan", title: "P", content: "v2", artifactId: artifact.id })
-  expect(prog.status).toBe("approved")
-  expect(prog.currentRevision).toBe(2)
+  // frozen: re-publishing without resubmit is rejected and leaves content untouched
+  await expect(
+    store.publish({ type: "plan", title: "P", content: "v2", artifactId: artifact.id }),
+  ).rejects.toThrow(/frozen/i)
+  const a = (await store.get(artifact.id))!
+  expect(a.status).toBe("approved")
+  expect(a.currentRevision).toBe(1)
+  expect(await store.readRevision(artifact.id, 1)).toBe("v1")
 
-  // resubmit forces a fresh review
+  // resubmit forces a fresh review and adds a revision
   const { artifact: re } = await store.publish({ type: "plan", title: "P", content: "v3", artifactId: artifact.id, resubmit: true })
   expect(re.status).toBe("awaiting_review")
+  expect(re.currentRevision).toBe(2)
+})
+
+test("an approved roadmap is frozen too: re-publish without resubmit is rejected", async () => {
+  const store = newStore()
+  const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r1", isRoadmap: true })
+  await store.resolveVerdict(road.id, { status: "approved" })
+  await expect(
+    store.publish({ type: "plan", title: "R", content: "r2", artifactId: road.id, isRoadmap: true }),
+  ).rejects.toThrow(/frozen/i)
+  expect((await store.get(road.id))!.currentRevision).toBe(1)
 })
 
 test("a brand-new artifact's first publish leaves its (empty) comments untouched", async () => {

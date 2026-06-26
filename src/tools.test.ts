@@ -74,7 +74,7 @@ test("plan publish blocks until verdict, returns approved", async () => {
   expect(parsed.status).toBe("approved")
 })
 
-test("re-publishing an approved plan is a non-blocking progress update", async () => {
+test("re-publishing an approved plan is rejected (frozen), leaving it untouched", async () => {
   const { tool, store } = setup()
   // get a plan approved (id1)
   const first = tool.execute(
@@ -85,17 +85,41 @@ test("re-publishing an approved plan is a non-blocking progress update", async (
   await store.resolveVerdict("id1", { status: "approved" })
   await first
 
-  // re-publish with updated Status → returns immediately, no pending verdict
+  // re-publish without resubmit → frozen error, no new revision, no pending verdict
   const out = await tool.execute(
     { type: "plan", title: "P", content: VALID_PLAN + "\nprogress!", artifactId: "id1" },
     { sessionID: "s1" } as any,
   )
   const parsed = JSON.parse(out as string)
+  expect(parsed.error).toMatch(/frozen/i)
   expect(parsed.status).toBe("approved")
-  expect(parsed.progress).toBe(true)
-  expect(parsed.revision).toBe(2)
   expect(store.hasPending("id1")).toBe(false)
-  expect((await store.get("id1"))!.status).toBe("approved")
+  const a = (await store.get("id1"))!
+  expect(a.status).toBe("approved")
+  expect(a.currentRevision).toBe(1) // content was NOT rewritten
+})
+
+test("an approved plan can be re-published with resubmit:true for a fresh review", async () => {
+  const { tool, store } = setup()
+  const first = tool.execute(
+    { type: "plan", title: "P", content: VALID_PLAN },
+    { sessionID: "s1" } as any,
+  )
+  await waitPending(store, "id1")
+  await store.resolveVerdict("id1", { status: "approved" })
+  await first
+
+  // resubmit re-enters review → blocks until a new verdict arrives
+  const exec = tool.execute(
+    { type: "plan", title: "P", content: VALID_PLAN + "\nnew scope", artifactId: "id1", resubmit: true },
+    { sessionID: "s1" } as any,
+  )
+  await waitPending(store, "id1")
+  expect((await store.get("id1"))!.status).toBe("awaiting_review")
+  await store.resolveVerdict("id1", { status: "approved" })
+  const parsed = JSON.parse(await exec as string)
+  expect(parsed.status).toBe("approved")
+  expect((await store.get("id1"))!.currentRevision).toBe(2)
 })
 
 test("resubmit re-opens review on an approved plan (blocks until verdict)", async () => {
@@ -176,7 +200,7 @@ test("plan missing required sections is rejected and creates no artifact", async
   const parsed = JSON.parse(out as string)
   expect(parsed.error).toContain("missing required sections")
   expect(parsed.missingSections).toEqual([
-    "Context", "Goals", "Approach", "Tasks", "Verification", "Status",
+    "Context", "Goals", "Approach", "Tasks", "Verification",
   ])
   expect(await store.list()).toHaveLength(0)
 })

@@ -9,6 +9,8 @@ import type { SessionSummary } from "./ArtifactList"
 export function SessionsIntro(props: {
   sessions: SessionSummary[]
   onPick: (key: string) => void
+  /** the live opencode session, highlighted so it stands out among recents */
+  activeSessionID?: string
 }) {
   if (props.sessions.length === 0) {
     return <p className="empty">No artifacts yet.</p>
@@ -20,21 +22,25 @@ export function SessionsIntro(props: {
         Pick a session to view its plans and reports.
       </p>
       <ul className="session-cards">
-        {props.sessions.map((s) => (
-          <li key={s.key}>
-            <button
-              type="button"
-              className="session-card"
-              onClick={() => props.onPick(s.key)}
-            >
-              <span className="session-card-title">{s.label}</span>
-              {s.hasUnseen && <span className="activity-dot" title="New activity" />}
-              <span className="session-card-meta">
-                {s.count} artifact{s.count === 1 ? "" : "s"}
-              </span>
-            </button>
-          </li>
-        ))}
+        {props.sessions.map((s) => {
+          const isCurrent = props.activeSessionID != null && s.key === props.activeSessionID
+          return (
+            <li key={s.key}>
+              <button
+                type="button"
+                className={`session-card${isCurrent ? " current" : ""}`}
+                onClick={() => props.onPick(s.key)}
+              >
+                <span className="session-card-title">{s.label}</span>
+                {s.hasUnseen && <span className="activity-dot" title="New activity" />}
+                {isCurrent && <span className="current-badge">current</span>}
+                <span className="session-card-meta">
+                  {s.count} artifact{s.count === 1 ? "" : "s"}
+                </span>
+              </button>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

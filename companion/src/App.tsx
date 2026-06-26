@@ -382,7 +382,7 @@ export function App() {
             />
           </>
         ) : !focusKey && !selectedId ? (
-          <SessionsIntro sessions={sessions} onPick={focusSession} />
+          <SessionsIntro sessions={sessions} onPick={focusSession} activeSessionID={activeSessionID} />
         ) : (
           <p className="empty">Select an artifact.</p>
         )}
