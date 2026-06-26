@@ -212,11 +212,14 @@ export function App() {
     }
   }
 
-  async function verdict(status: "approved" | "changes_requested") {
+  async function verdict(
+    status: "approved" | "changes_requested" | "declined",
+    reason?: string,
+  ) {
     if (!detail) return
     setSubmittingVerdict(true)
     try {
-      await api.postVerdict(detail.artifact.id, status)
+      await api.postVerdict(detail.artifact.id, status, reason)
       await refreshDetail(detail.artifact.id)
     } catch {
       setError("Couldn't submit the verdict.")
@@ -231,7 +234,10 @@ export function App() {
   // A draft can be commented on (early feedback) but not approved until the
   // agent submits it for review.
   const canComment =
-    isLatest && detail?.artifact.type === "plan" && detail?.artifact.status !== "approved"
+    isLatest &&
+    detail?.artifact.type === "plan" &&
+    detail?.artifact.status !== "approved" &&
+    detail?.artifact.status !== "declined"
   const isDraft = detail?.artifact.status === "draft"
   const canApprove = canComment && !isDraft
   const revisionComments = detail
@@ -315,6 +321,14 @@ export function App() {
             {isLatest && detail.artifact.status === "approved" && (
               <div className="approved-banner">✓ Approved — review closed</div>
             )}
+            {isLatest && detail.artifact.status === "declined" && (
+              <div className="declined-banner">
+                ✕ Declined — the agent was stopped.
+                {detail.artifact.declineReason && (
+                  <span className="declined-reason"> Reason: {detail.artifact.declineReason}</span>
+                )}
+              </div>
+            )}
             <ArtifactView
               content={isLatest ? detail.content : historicalContent ?? ""}
               comments={revisionComments}
@@ -363,6 +377,7 @@ export function App() {
                   <ActionBar
                     onApprove={() => verdict("approved")}
                     onRequestChanges={() => verdict("changes_requested")}
+                    onDecline={(reason) => verdict("declined", reason)}
                     disabled={submittingVerdict || detail.artifact.status === "changes_requested"}
                     note={
                       detail.artifact.status === "changes_requested"

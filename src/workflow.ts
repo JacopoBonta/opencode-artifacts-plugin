@@ -283,6 +283,23 @@ ${content}`
 }
 
 /**
+ * Notice injected when the session's active plan was DECLINED by the reviewer.
+ * Replaces the normal plan block so the agent doesn't treat a rejected plan as
+ * something to revise: it states the rejection (and reason, if any) and tells
+ * the agent to stop and await the user's new direction. Intentionally omits the
+ * plan body to avoid inviting a silent re-submission.
+ */
+export function buildDeclineContext(plan: Artifact): string {
+  const reason = plan.declineReason?.trim()
+  return `# Declined plan for this session
+
+The plan "${plan.title}" (id: ${plan.id}) was DECLINED by the reviewer. Edits remain BLOCKED.
+${reason ? `\nReviewer's reason: ${reason}\n` : "\nNo reason was given.\n"}
+Do NOT resume or re-submit this rejected work. Wait for the user's new direction; only
+publish a fresh plan once they tell you how they want to proceed.`
+}
+
+/**
  * Enumerate a roadmap's phase artifacts (id / title / status) plus progress, so
  * the full plan-of-record — including scratched drafts of upcoming phases —
  * survives a context compaction.

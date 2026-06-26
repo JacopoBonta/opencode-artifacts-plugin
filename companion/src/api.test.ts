@@ -23,6 +23,24 @@ test("postVerdict POSTs status to verdict endpoint", async () => {
   expect(body.status).toBe("approved")
 })
 
+test("postVerdict includes the reason when declining", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
+  vi.stubGlobal("fetch", fetchMock)
+  await postVerdict("id1", "declined", "out of scope")
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+  expect(body.status).toBe("declined")
+  expect(body.reason).toBe("out of scope")
+})
+
+test("postVerdict omits the reason key when none is given", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
+  vi.stubGlobal("fetch", fetchMock)
+  await postVerdict("id1", "declined")
+  const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+  expect(body.status).toBe("declined")
+  expect("reason" in body).toBe(false)
+})
+
 test("getRevision GETs the revision endpoint", async () => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ content: "# rev 2" }) })
   vi.stubGlobal("fetch", fetchMock)

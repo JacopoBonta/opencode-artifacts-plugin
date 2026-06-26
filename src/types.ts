@@ -5,6 +5,7 @@ export type ArtifactStatus =
   | "awaiting_review"
   | "approved"
   | "changes_requested"
+  | "declined"
   | "published"
 
 export interface Anchor {
@@ -50,11 +51,18 @@ export interface Artifact {
    * Cleared by resubmitting the plan for a fresh review.
    */
   completed?: boolean
+  /**
+   * Reviewer's reason for declining the plan (optional). Set when a plan is
+   * declined; surfaced to the human in the companion and injected into the
+   * agent's context so a re-engaged session knows why the work was rejected.
+   */
+  declineReason?: string
 }
 
 export type Verdict =
   | { status: "approved"; comments?: Comment[] }
   | { status: "changes_requested"; comments: Comment[] }
+  | { status: "declined"; reason?: string; comments?: Comment[] }
 
 export function isPlan(a: Pick<Artifact, "type">): a is { type: "plan" } {
   return a.type === "plan"

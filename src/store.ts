@@ -191,7 +191,15 @@ export function createStore(opts: StoreOptions) {
   async function resolveVerdict(id: string, verdict: Verdict): Promise<void> {
     const a = artifacts.get(id)
     if (a) {
-      a.status = verdict.status === "approved" ? "approved" : "changes_requested"
+      a.status =
+        verdict.status === "approved"
+          ? "approved"
+          : verdict.status === "declined"
+            ? "declined"
+            : "changes_requested"
+      // Record the reviewer's reason only when declining; clear any stale reason
+      // otherwise so a later approve/changes-requested doesn't carry it.
+      a.declineReason = verdict.status === "declined" ? verdict.reason : undefined
       a.updatedAt = clock()
       await persistMeta(a)
     }

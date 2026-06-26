@@ -4,6 +4,7 @@ import {
   isMutatingCall,
   gateState,
   buildSessionContext,
+  buildDeclineContext,
   buildRoadmapContext,
 } from "./workflow"
 import type { Artifact } from "./types"
@@ -192,4 +193,18 @@ test("buildSessionContext embeds plan content and status", () => {
   expect(ctx).toContain("BODY-MARKER")
   expect(ctx).toContain("APPROVED")
   expect(ctx).toContain("p1")
+})
+
+test("buildDeclineContext states the rejection, the reason, and 'do not resume'", () => {
+  const ctx = buildDeclineContext(plan("declined", { title: "Bad plan", declineReason: "out of scope" }))
+  expect(ctx).toContain("DECLINED")
+  expect(ctx).toContain("Bad plan")
+  expect(ctx).toContain("out of scope")
+  expect(ctx).toMatch(/do not resume/i)
+})
+
+test("buildDeclineContext handles a missing reason", () => {
+  const ctx = buildDeclineContext(plan("declined", { title: "Bad plan" }))
+  expect(ctx).toContain("No reason was given")
+  expect(ctx).toMatch(/do not resume/i)
 })

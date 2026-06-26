@@ -11,6 +11,7 @@ import {
   gateState,
   buildWorkflowContract,
   buildSessionContext,
+  buildDeclineContext,
   buildRoadmapContext,
 } from "./workflow"
 
@@ -48,6 +49,14 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
     staticDir: existsSync(staticDir) ? staticDir : null,
     resolveSessionTitle,
     getActiveSession: () => currentSessionID,
+    // Abort the session's current turn when its plan is declined, so the parked
+    // agent stops instead of waiting on (or acting on) the resolved tool call.
+    interruptSession: (id) => {
+      const p = client.session.abort({ path: { id } }) as any
+      // abort returns a RequestResult that may not be a real Promise in tests;
+      // guard with optional chaining (mirrors notify/showToast below).
+      if (p && typeof p.catch === "function") p.catch(() => {})
+    },
   })
 
   let opened = false
@@ -76,7 +85,12 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
     const blocks: string[] = []
     // The active (non-roadmap) plan governing the gate, if any.
     const plan = store.getActivePlan(sessionID)
-    if (plan) {
+    if (plan?.status === "declined") {
+      // A declined plan needs no content read — inject a rejection notice (with
+      // the reviewer's reason) instead of the normal plan block, so the agent
+      // doesn't treat the rejected work as something to revise.
+      blocks.push(buildDeclineContext(plan))
+    } else if (plan) {
       try {
         const content = await store.readRevision(plan.id, plan.currentRevision)
         blocks.push(buildSessionContext(plan, content))
