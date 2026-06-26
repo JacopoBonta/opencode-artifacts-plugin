@@ -27,6 +27,47 @@ test("auto-selects the first artifact on load and approves", async () => {
   expect(verdict).toHaveBeenCalledWith("id1", "approved", undefined)
 })
 
+test("auto-selects the most recently updated artifact, not the first in list order", async () => {
+  // The list arrives in filesystem order (oldest first) — selection must ignore
+  // that order and pick the most recently updated artifact.
+  vi.mocked(api.listArtifacts).mockResolvedValue([
+    { id: "old", type: "plan", title: "Old", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 100 },
+    { id: "new", type: "plan", title: "New", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 300 },
+    { id: "mid", type: "plan", title: "Mid", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 200 },
+  ])
+  vi.mocked(api.getArtifact).mockImplementation(async (id: string) => ({
+    artifact: { id, type: "plan", title: id, status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 0 },
+    content: `# ${id} body`,
+    comments: [],
+  }))
+  render(<App />)
+  await waitFor(() => screen.getByRole("heading", { name: "new body" }))
+})
+
+test("prefers the active session's most recent artifact over a globally-newer one elsewhere", async () => {
+  let resolveList!: (a: any) => void
+  vi.mocked(api.listArtifacts).mockReturnValue(new Promise((r) => { resolveList = r }))
+  let onEvent: ((e: any) => void) | undefined
+  vi.mocked(api.subscribeEvents).mockImplementation((cb) => { onEvent = cb; return () => {} })
+  vi.mocked(api.getArtifact).mockImplementation(async (id: string) => ({
+    artifact: { id, type: "plan", title: id, status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 0 },
+    content: `# ${id} body`,
+    comments: [],
+  }))
+  render(<App />)
+  // Establish the active session before the list arrives, so the preference
+  // applies when the auto-select runs.
+  await waitFor(() => expect(onEvent).toBeTypeOf("function"))
+  act(() => onEvent!({ type: "session.active", sessionID: "ses_active" }))
+  await act(async () => {
+    resolveList([
+      { id: "other_new", type: "plan", title: "Other New", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 500, sessionID: "ses_other" },
+      { id: "active_old", type: "plan", title: "Active Old", status: "awaiting_review", currentRevision: 1, createdAt: 0, updatedAt: 100, sessionID: "ses_active" },
+    ])
+  })
+  await waitFor(() => screen.getByRole("heading", { name: "active_old body" }))
+})
+
 test("declining reveals an optional reason field and posts the declined verdict", async () => {
   const verdict = vi.spyOn(api, "postVerdict").mockResolvedValue()
   render(<App />)
