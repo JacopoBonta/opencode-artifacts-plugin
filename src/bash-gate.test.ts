@@ -36,6 +36,26 @@ test("gates sed -i, package installs, and mutating git subcommands", () => {
   expect(isMutatingBash("git reset --hard")).toBe(true)
 })
 
+test("still gates checkout/switch that touch the working tree (no branch-creation flag)", () => {
+  expect(isMutatingBash("git checkout main")).toBe(true)
+  expect(isMutatingBash("git checkout -- file.txt")).toBe(true)
+  expect(isMutatingBash("git switch develop")).toBe(true)
+})
+
+test("does NOT gate branch creation via checkout/switch (the key false-positive fix)", () => {
+  // `checkout -b` / `switch -c` create a branch at HEAD without writing files.
+  expect(isMutatingBash("git checkout -b feature/foo")).toBe(false)
+  expect(isMutatingBash("git checkout -B main")).toBe(false)
+  expect(isMutatingBash("git switch -c feature/foo")).toBe(false)
+  expect(isMutatingBash("git switch --create feature/foo")).toBe(false)
+  // the real-world compound the gate was wrongly blocking
+  expect(
+    isMutatingBash(
+      "git checkout -b chore/x && git add y && git commit -m z && git push origin chore/x",
+    ),
+  ).toBe(false)
+})
+
 test("gates a mutating command behind a separator, pipe, or wrapper", () => {
   expect(isMutatingBash("grep foo . && rm bad")).toBe(true)
   expect(isMutatingBash("cat x | tee out")).toBe(true)

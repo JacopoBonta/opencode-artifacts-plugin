@@ -28,6 +28,15 @@ const PKG_SUBCMDS = new Set(["i", "install", "add", "remove", "rm", "uninstall"]
 const GIT_MUTATING = new Set([
   "checkout", "switch", "apply", "reset", "restore", "merge", "rebase", "stash", "clean", "rm", "mv",
 ])
+/**
+ * Flags that turn `git checkout`/`git switch` into branch creation
+ * (`-b`/`-B` for checkout, `-c`/`-C`/`--create`/`--force-create` for switch).
+ * Creating a branch points a ref at HEAD without touching working-tree files, so
+ * — like add/commit/push — it is bookkeeping and not gated. (We deliberately
+ * don't try to detect the rare `checkout -b foo <start-point>` form that does
+ * move the working tree; the gate is a cooperative heuristic, not a boundary.)
+ */
+const GIT_BRANCH_CREATE_FLAGS = new Set(["-b", "-B", "-c", "-C", "--create", "--force-create"])
 
 type Token =
   | { t: "word"; v: string; cmd: boolean }
@@ -241,7 +250,22 @@ export function isMutatingBash(command: string): boolean {
     }
     if (v === "git") {
       const sub = nextWord(tokens, k)
-      if (sub && GIT_MUTATING.has(sub)) return true
+      if (sub && GIT_MUTATING.has(sub)) {
+        if (sub === "checkout" || sub === "switch") {
+          // Branch creation (`-b`/`switch -c`) doesn't write the working tree.
+          let createsBranch = false
+          for (let j = k + 1; j < tokens.length; j++) {
+            const t = tokens[j]
+            if (t.t === "sep") break
+            if (t.t === "word" && GIT_BRANCH_CREATE_FLAGS.has(t.v)) {
+              createsBranch = true
+              break
+            }
+          }
+          if (createsBranch) continue
+        }
+        return true
+      }
     }
   }
   return false
