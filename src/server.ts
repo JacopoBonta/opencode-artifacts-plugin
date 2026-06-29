@@ -127,6 +127,36 @@ export function createServer(opts: ServerOptions) {
         return json(c, 201)
       }
 
+      const commentItemMatch = path.match(/^\/api\/artifacts\/([^/]+)\/comments\/([^/]+)$/)
+      if (commentItemMatch && (req.method === "PATCH" || req.method === "DELETE")) {
+        const id = commentItemMatch[1]
+        const cid = commentItemMatch[2]
+        if (!safeId(id)) return json({ error: "not found" }, 404)
+        const ca = await store.get(id)
+        if (ca && (ca.status === "approved" || ca.type === "report")) {
+          return json({ error: "read-only artifact" }, 409)
+        }
+        if (req.method === "DELETE") {
+          try {
+            await store.deleteComment(id, cid)
+          } catch {
+            return json({ error: "not found" }, 404)
+          }
+          events.broadcast({ type: "comment.updated", id })
+          return json({ ok: true })
+        }
+        let b: any
+        try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
+        let c
+        try {
+          c = await store.editComment(id, cid, b.body)
+        } catch {
+          return json({ error: "not found" }, 404)
+        }
+        events.broadcast({ type: "comment.updated", id })
+        return json(c)
+      }
+
       const verdictMatch = path.match(/^\/api\/artifacts\/([^/]+)\/verdict$/)
       if (verdictMatch && req.method === "POST") {
         const id = verdictMatch[1]

@@ -1,5 +1,5 @@
 import { test, expect, vi, afterEach } from "vitest"
-import { listArtifacts, getArtifact, postComment, postVerdict, getRevision } from "./api"
+import { listArtifacts, getArtifact, postComment, patchComment, deleteComment, postVerdict, getRevision } from "./api"
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -39,6 +39,27 @@ test("postVerdict omits the reason key when none is given", async () => {
   const body = JSON.parse(fetchMock.mock.calls[0][1].body)
   expect(body.status).toBe("declined")
   expect("reason" in body).toBe(false)
+})
+
+test("patchComment PATCHes the comment endpoint with the new body", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "c1", body: "new" }) })
+  vi.stubGlobal("fetch", fetchMock)
+  await patchComment("id1", "c1", "new")
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/artifacts/id1/comments/c1",
+    expect.objectContaining({ method: "PATCH" }),
+  )
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).body).toBe("new")
+})
+
+test("deleteComment DELETEs the comment endpoint", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
+  vi.stubGlobal("fetch", fetchMock)
+  await deleteComment("id1", "c1")
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/artifacts/id1/comments/c1",
+    expect.objectContaining({ method: "DELETE" }),
+  )
 })
 
 test("getRevision GETs the revision endpoint", async () => {

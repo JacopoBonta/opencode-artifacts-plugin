@@ -60,6 +60,52 @@ test("addComment to an unknown artifact throws", async () => {
   ).rejects.toThrow("unknown artifact")
 })
 
+test("editComment updates the body and persists", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const c = await store.addComment(artifact.id, { revision: 1, kind: "general", body: "fix this" })
+  const updated = await store.editComment(artifact.id, c.id, "fix this properly")
+  expect(updated.body).toBe("fix this properly")
+  const comments = await store.getComments(artifact.id)
+  expect(comments).toHaveLength(1)
+  expect(comments[0].body).toBe("fix this properly")
+})
+
+test("editComment on an unknown artifact or comment throws", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  await expect(store.editComment("nope", "id2", "y")).rejects.toThrow("unknown artifact")
+  await expect(store.editComment(artifact.id, "nope", "y")).rejects.toThrow("unknown comment")
+})
+
+test("editComment on a resolved comment throws (already submitted)", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })
+  await store.addComment(artifact.id, { revision: 1, kind: "general", body: "note" })
+  // A revision bump auto-resolves the comment.
+  await store.publish({ type: "plan", title: "P", content: "v2", artifactId: artifact.id })
+  const [resolved] = await store.getComments(artifact.id)
+  await expect(store.editComment(artifact.id, resolved.id, "y")).rejects.toThrow("already submitted")
+})
+
+test("deleteComment removes the comment and persists", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const c = await store.addComment(artifact.id, { revision: 1, kind: "general", body: "drop me" })
+  await store.deleteComment(artifact.id, c.id)
+  expect(await store.getComments(artifact.id)).toHaveLength(0)
+})
+
+test("deleteComment guards unknown and resolved comments", async () => {
+  const store = newStore()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })
+  await expect(store.deleteComment(artifact.id, "nope")).rejects.toThrow("unknown comment")
+  await store.addComment(artifact.id, { revision: 1, kind: "general", body: "note" })
+  await store.publish({ type: "plan", title: "P", content: "v2", artifactId: artifact.id })
+  const [resolved] = await store.getComments(artifact.id)
+  await expect(store.deleteComment(artifact.id, resolved.id)).rejects.toThrow("already submitted")
+})
+
 test("re-publishing a revision auto-resolves all prior comments", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "v1" })
