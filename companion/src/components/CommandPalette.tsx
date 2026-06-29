@@ -38,7 +38,7 @@ export function CommandPalette(props: {
           id: a.id,
           title: a.title,
           session: sessionLabel(a),
-          type: a.isRoadmap ? "roadmap" : a.type,
+          type: a.isRoadmap ? "roadmap" : a.type === "report" && a.parentId ? "result" : a.type,
           archived: !!a.archived,
         })),
     [props.artifacts],

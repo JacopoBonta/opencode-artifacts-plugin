@@ -169,8 +169,10 @@ test("a report completes the session's standalone active plan; the gate re-close
   await store.resolveVerdict(plan.id, { status: "approved" })
   expect(store.getActivePlan("s1")!.id).toBe(plan.id)
 
-  // Publishing a report in the same session marks the plan completed → no longer active.
-  await store.publish({ type: "report", title: "R", content: "done", ...s })
+  // Publishing a report in the same session nests it under the plan AND marks
+  // the plan completed → no longer active.
+  const { artifact: rep } = await store.publish({ type: "report", title: "R", content: "done", ...s })
+  expect(rep.parentId).toBe(plan.id)
   expect(store.getActivePlan("s1")).toBeUndefined()
   expect((await store.get(plan.id))!.completed).toBe(true)
   expect(store.getLastCompletedPlan("s1")!.id).toBe(plan.id)
@@ -208,8 +210,10 @@ test("a phase report (parentId) does NOT complete its phase plan", async () => {
   await store.resolveVerdict(phase.id, { status: "approved" })
   expect(store.getActivePlan("s1")!.id).toBe(phase.id)
 
-  // A report carrying the roadmap parentId is a milestone, not a completion.
-  await store.publish({ type: "report", title: "PR", content: "x", parentId: road.id, ...s })
+  // A report auto-nests under the active PHASE plan and is a milestone, not a
+  // completion: the phase plan keeps governing the gate.
+  const { artifact: rep } = await store.publish({ type: "report", title: "PR", content: "x", ...s })
+  expect(rep.parentId).toBe(phase.id)
   expect((await store.get(phase.id))!.completed).toBeFalsy()
   expect(store.getActivePlan("s1")!.id).toBe(phase.id)
 })
@@ -349,28 +353,50 @@ test("archived plans/roadmaps are excluded from getActivePlan/getRoadmap/getChil
   expect(store.getChildren(road.id)).toHaveLength(0)
 })
 
+test("getDescendants returns the full subtree (roadmap -> phase plan -> report)", async () => {
+  const store = newStore()
+  const s = { sessionID: "s1" }
+  const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r", isRoadmap: true, ...s })
+  await store.resolveVerdict(road.id, { status: "approved" })
+  const { artifact: phase } = await store.publish({ type: "plan", title: "P1", content: "p", parentId: road.id, ...s })
+  await store.resolveVerdict(phase.id, { status: "approved" })
+  // Auto-nests under the active phase plan.
+  const { artifact: rep } = await store.publish({ type: "report", title: "PR", content: "x", ...s })
+  expect(rep.parentId).toBe(phase.id)
+
+  // Direct children stop at the phase plan; descendants walk through to the report.
+  expect(store.getChildren(road.id).map((c) => c.id)).toEqual([phase.id])
+  expect(store.getDescendants(road.id).map((c) => c.id)).toEqual([phase.id, rep.id])
+  expect(store.getDescendants(phase.id).map((c) => c.id)).toEqual([rep.id])
+})
+
 test("remove throws when the target is not archived", async () => {
   const store = newStore()
   const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
   await expect(store.remove(artifact.id)).rejects.toThrow("not archived")
 })
 
-test("remove cascades a roadmap's archived children but PRESERVES un-archived same-session reports", async () => {
+test("remove cascades a roadmap's archived subtree but PRESERVES un-archived loose reports", async () => {
   const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
   let now = 1000, n = 0
   const store = createStore({ root: dir, clock: () => now++, idgen: () => `id${++n}` })
   const s = { sessionID: "s1" }
   const { artifact: road } = await store.publish({ type: "plan", title: "R", content: "r", isRoadmap: true, ...s })
-  const { artifact: phase } = await store.publish({ type: "plan", title: "P1", content: "p", parentId: road.id, ...s })
-  const { artifact: phaseRep } = await store.publish({ type: "report", title: "PR", content: "x", parentId: road.id, ...s })
-  // A standalone report (no parentId) is NOT archived by the roadmap's archive
-  // cascade, so deleting the roadmap must leave it untouched.
+  // No active plan yet (the roadmap is not gate-governing), so this report stays
+  // loose — it is NOT part of the roadmap subtree and must survive the cascade.
   const { artifact: looseRep } = await store.publish({ type: "report", title: "LR", content: "y", ...s })
+  const { artifact: phase } = await store.publish({ type: "plan", title: "P1", content: "p", parentId: road.id, ...s })
+  // With the phase plan active, this report auto-nests under the PHASE PLAN.
+  const { artifact: phaseRep } = await store.publish({ type: "report", title: "PR", content: "x", ...s })
+  expect(phaseRep.parentId).toBe(phase.id)
   // a report in a different session must NOT be touched
   const { artifact: otherRep } = await store.publish({ type: "report", title: "OR", content: "z", sessionID: "s2" })
 
-  // Archive cascades to the roadmap's children (phase, phaseRep) but not looseRep.
+  // Archiving the roadmap cascades to its whole subtree (phase + phaseRep), but
+  // not the loose report (no parent) nor the other-session report.
   await store.setArchived(road.id, true)
+  expect((await store.get(phaseRep.id))!.archived).toBe(true)
+  expect((await store.get(looseRep.id))!.archived).toBeFalsy()
   const deleted = await store.remove(road.id)
   expect(deleted.sort()).toEqual([road.id, phase.id, phaseRep.id].sort())
 
@@ -399,18 +425,26 @@ test("remove cascades an ARCHIVED standalone same-session report", async () => {
   expect(await store.get(looseRep.id)).toBeUndefined()
 })
 
-test("remove of an archived non-roadmap plan does not touch un-archived same-session reports", async () => {
+test("archiving a standalone plan cascades to its report, but a later loose report survives", async () => {
   const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
   let now = 1000, n = 0
   const store = createStore({ root: dir, clock: () => now++, idgen: () => `id${++n}` })
   const s = { sessionID: "s1" }
   const { artifact: plan } = await store.publish({ type: "plan", title: "P", content: "p", ...s })
+  // Reports on the active standalone plan: nests under it AND completes it.
   const { artifact: rep } = await store.publish({ type: "report", title: "R", content: "y", ...s })
+  expect(rep.parentId).toBe(plan.id)
+  expect((await store.get(plan.id))!.completed).toBe(true)
+  // The plan is now completed → no active plan → this report stays loose.
+  const { artifact: looseRep } = await store.publish({ type: "report", title: "LR", content: "z", ...s })
+  expect(looseRep.parentId).toBeUndefined()
 
+  // Archiving the plan archives its report too (as a unit); the loose one is left.
   await store.setArchived(plan.id, true)
+  expect((await store.get(rep.id))!.archived).toBe(true)
   const deleted = await store.remove(plan.id)
-  expect(deleted).toEqual([plan.id])
-  expect(await store.get(rep.id)).toBeDefined()
+  expect(deleted.sort()).toEqual([plan.id, rep.id].sort())
+  expect(await store.get(looseRep.id)).toBeDefined()
 })
 
 test("remove rejects a pending verdict for a deleted artifact", async () => {

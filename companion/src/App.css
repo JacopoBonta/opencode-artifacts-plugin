@@ -11,6 +11,7 @@
   --accent-fg: #ffffff;
   --plan: #818cf8;
   --report: #22d3ee;
+  --result: #34d399;
   --status-awaiting_review: #fbbf24;
   --status-approved: #34d399;
   --status-changes_requested: #f87171;
@@ -44,6 +45,7 @@
   --accent-fg: #ffffff;
   --plan: #4f46e5;
   --report: #0891b2;
+  --result: #15803d;
   --status-awaiting_review: #b45309;
   --status-approved: #15803d;
   --status-changes_requested: #b91c1c;
@@ -113,6 +115,7 @@ button { font-family: inherit; }
 .badge { align-self: flex-start; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; }
 .badge-plan { color: var(--plan); background: color-mix(in srgb, var(--plan) 16%, transparent); }
 .badge-report { color: var(--report); background: color-mix(in srgb, var(--report) 16%, transparent); }
+.badge-result { color: var(--result); background: color-mix(in srgb, var(--result) 16%, transparent); }
 .badge-roadmap { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .phase-progress { font-size: 11px; font-weight: 700; color: var(--text-muted); background: var(--surface-2); border-radius: 999px; padding: 1px 7px; }
 .status { font-size: 11.5px; font-weight: 600; color: var(--text-muted); }
@@ -282,6 +285,7 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .tab-badge { flex: none; width: 7px; height: 7px; border-radius: 999px; }
 .tab-badge.badge-plan { background: var(--plan); }
 .tab-badge.badge-report { background: var(--report); }
+.tab-badge.badge-result { background: var(--result); }
 .tab-badge.badge-roadmap { background: var(--accent); }
 .tab-title { overflow: hidden; text-overflow: ellipsis; }
 .tab-close { flex: none; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border: none; background: none; color: var(--text-muted); font-size: 14px; line-height: 1; border-radius: 4px; cursor: pointer; opacity: 0; }

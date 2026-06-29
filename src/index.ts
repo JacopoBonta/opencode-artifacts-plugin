@@ -106,7 +106,7 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
     if (roadmap) {
       try {
         const rmContent = await store.readRevision(roadmap.id, roadmap.currentRevision)
-        blocks.push(buildRoadmapContext(roadmap, rmContent, store.getChildren(roadmap.id)))
+        blocks.push(buildRoadmapContext(roadmap, rmContent, store.getDescendants(roadmap.id)))
       } catch {
         // roadmap content unreadable — the active plan block still stands
       }

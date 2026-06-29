@@ -94,12 +94,15 @@ test("full roadmap -> phase -> report decomposition drives the gate correctly", 
   expect(store.getActivePlan("s1")!.parentId).toBe("id1")
   expect(gate(store)).toBe("open")
 
-  // 3. Phase 1 results report (non-blocking) → gate stays open, report linked.
+  // 3. Phase 1 results report (non-blocking) → gate stays open. The report is
+  //    auto-linked to the active PHASE PLAN (id2), not the roadmap, and does NOT
+  //    complete it (phase reports are milestones).
   await tool.execute(
-    { type: "report", title: "Phase 1 results", content: "done", parentId: "id1" } as any,
+    { type: "report", title: "Phase 1 results", content: "done" } as any,
     { sessionID: "s1" } as any,
   )
   expect(gate(store)).toBe("open")
+  expect((await store.get("id3"))!.parentId).toBe("id2")
 
   // 4. Phase 2 plan published but NOT yet approved → gate re-arms (blocked).
   const exec = tool.execute(
@@ -114,10 +117,12 @@ test("full roadmap -> phase -> report decomposition drives the gate correctly", 
   await exec
   expect(gate(store)).toBe("open")
 
-  // The roadmap owns all three phase artifacts (2 plans + 1 report).
-  const children = store.getChildren("id1")
-  expect(children.map((c) => c.id)).toEqual(["id2", "id3", "id4"])
-  expect(children.filter((c) => c.type === "plan")).toHaveLength(2)
+  // The roadmap DIRECTLY owns its two phase plans; the phase-1 report nests
+  // under phase 1, not the roadmap. getDescendants walks the whole subtree.
+  expect(store.getChildren("id1").map((c) => c.id)).toEqual(["id2", "id4"])
+  expect(store.getChildren("id2").map((c) => c.id)).toEqual(["id3"])
+  expect(store.getDescendants("id1").map((c) => c.id)).toEqual(["id2", "id3", "id4"])
+  expect(store.getDescendants("id1").filter((c) => c.type === "plan")).toHaveLength(2)
 })
 
 test("scratch-upfront variant: drafts created first, then submitted per phase", async () => {

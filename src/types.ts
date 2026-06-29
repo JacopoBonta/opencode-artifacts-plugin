@@ -38,7 +38,12 @@ export interface Artifact {
   sessionID?: string
   /** name of the agent that created this artifact */
   agent?: string
-  /** roadmap plan this artifact belongs to (set on phase plans + phase reports) */
+  /**
+   * The artifact this one nests under: a roadmap for phase plans, and the
+   * reported-on plan for reports (set automatically when a report is published
+   * against an active plan — standalone or phase). Absent on top-level plans,
+   * roadmaps, and general (research) reports that have no associated plan.
+   */
   parentId?: string
   /** true when this plan is a decomposition overview rather than an editable plan */
   isRoadmap?: boolean
