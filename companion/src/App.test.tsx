@@ -357,3 +357,19 @@ test("a report is read-only: no comment input, no action buttons, shows the read
   expect(screen.queryByRole("button", { name: /request changes/i })).toBeNull()
   expect(screen.getByText(/agent report — read-only/i)).toBeInTheDocument()
 })
+
+test("the explorer badges a plan-linked report as 'result' and a general report as 'report'", async () => {
+  vi.mocked(api.listArtifacts).mockResolvedValue([
+    { id: "pl", type: "plan", title: "Plan", status: "approved", currentRevision: 1, createdAt: 1, updatedAt: 1, sessionID: "ses_x" },
+    { id: "lr", type: "report", title: "Plan result", status: "published", currentRevision: 1, createdAt: 2, updatedAt: 2, sessionID: "ses_x", parentId: "pl" },
+    { id: "gr", type: "report", title: "Research", status: "published", currentRevision: 1, createdAt: 3, updatedAt: 3, sessionID: "ses_x" },
+  ])
+  render(<App />)
+  await focusSession("ses_x")
+  // The roadmap/plan node is expanded by default, so the nested report is visible.
+  await waitFor(() => expect(document.querySelector(".badge-result")).not.toBeNull())
+  const tree = document.querySelector(".artifact-tree")!
+  // The linked report reads as a "result"; the general report keeps "report".
+  expect(within(tree as HTMLElement).getByText("result")).toBeInTheDocument()
+  expect(within(tree as HTMLElement).getByText("report")).toBeInTheDocument()
+})

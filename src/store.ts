@@ -141,21 +141,29 @@ export function createStore(opts: StoreOptions) {
     if (isNew) comments.set(next.id, [])
     else if (resolvedComments) comments.set(next.id, resolvedComments)
 
-    // Publishing a report COMPLETES the session's active standalone plan: the
+    // A NEW report is LINKED to the session's active plan (standalone or phase):
+    // its parentId is set to that plan so it nests directly under the plan it
+    // reports on. A STANDALONE plan (no parentId) is additionally COMPLETED — the
     // planned work is reported done, so the gate re-closes and new work needs a
-    // fresh plan. Scoped to standalone plans (no parentId) — a phase report is a
-    // mid-roadmap milestone and must not complete its phase plan (the roadmap
-    // cadence re-closes the gate when the next phase is submitted). Done after
-    // the report's I/O so a failed write leaves no dangling completion; and
-    // WITHOUT bumping updatedAt (completion is not a content edit — mirrors
-    // setArchived — and a completed plan is excluded from ordering anyway).
-    if (next.type === "report" && input.sessionID) {
+    // fresh plan. A phase plan is NOT completed: a phase report is a mid-roadmap
+    // milestone and the roadmap cadence re-closes the gate when the next phase is
+    // submitted. Scoped to NEW reports (a revision must not re-link/re-complete).
+    // The store derives the link from the active plan and ignores any caller-
+    // passed parentId, falling back to it only when there is no active plan.
+    // Done after the report's own I/O so a failed write leaves no dangling state,
+    // and WITHOUT bumping updatedAt (linking/completion is not a content edit —
+    // mirrors setArchived — and a completed plan is excluded from ordering anyway).
+    if (isNew && next.type === "report" && input.sessionID) {
       const active = getActivePlan(input.sessionID)
-      if (active && !active.parentId) {
-        const live = artifacts.get(active.id)
-        if (live) {
-          live.completed = true
-          await persistMeta(live)
+      if (active) {
+        next.parentId = active.id
+        await persistMeta(next)
+        if (!active.parentId) {
+          const live = artifacts.get(active.id)
+          if (live) {
+            live.completed = true
+            await persistMeta(live)
+          }
         }
       }
     }
@@ -256,16 +264,37 @@ export function createStore(opts: StoreOptions) {
   }
 
   /**
+   * All transitive descendants of an artifact in the nesting tree (children,
+   * grandchildren, ...): a roadmap's phase plans and each phase plan's reports;
+   * a standalone plan's reports. Excludes the artifact itself. Order is
+   * unspecified — callers that need ordering sort it themselves.
+   */
+  function descendantsOf(id: string): Artifact[] {
+    const out: Artifact[] = []
+    const stack = [id]
+    while (stack.length) {
+      const parent = stack.pop()!
+      for (const a of artifacts.values()) {
+        if (a.parentId === parent) {
+          out.push(a)
+          stack.push(a.id)
+        }
+      }
+    }
+    return out
+  }
+
+  /**
    * Archive or unarchive an artifact, hiding it from the main companion view.
-   * A roadmap is archived as a unit: the flag cascades to all its children
-   * (phase plans + reports). `updatedAt` is intentionally left untouched — this
-   * is not a content edit and must not reorder the list or affect the gate.
-   * Returns the affected artifacts.
+   * A plan/roadmap is archived as a UNIT: the flag cascades to all transitive
+   * descendants (a roadmap's phase plans and their reports; a plan's reports).
+   * `updatedAt` is intentionally left untouched — this is not a content edit and
+   * must not reorder the list or affect the gate. Returns the affected artifacts.
    */
   async function setArchived(id: string, archived: boolean): Promise<Artifact[]> {
     const a = artifacts.get(id)
     if (!a) throw new Error(`unknown artifact: ${id}`)
-    const targets = [a, ...(a.isRoadmap ? [...artifacts.values()].filter((c) => c.parentId === id) : [])]
+    const targets = [a, ...descendantsOf(id)]
     for (const t of targets) {
       t.archived = archived
       await persistMeta(t)
@@ -279,9 +308,11 @@ export function createStore(opts: StoreOptions) {
    * cascade only sweeps up tied-together artifacts that are THEMSELVES archived.
    * This makes delete symmetric with the archive-before-delete invariant — you
    * can't lose a still-visible artifact by deleting something else. The cascade
-   * covers: a roadmap's archived children (phase plans + reports), plus archived
-   * standalone same-session reports (reports sharing the target's sessionID with
-   * no parentId). Returns the deleted ids.
+   * covers: the target's archived transitive descendants (a roadmap's phase
+   * plans and their reports; a plan's reports), plus — as a fallback for legacy
+   * data published before reports were linked — archived standalone same-session
+   * reports (reports sharing the target's sessionID with no parentId). Returns
+   * the deleted ids.
    */
   async function remove(id: string): Promise<string[]> {
     const a = artifacts.get(id)
@@ -289,9 +320,7 @@ export function createStore(opts: StoreOptions) {
     if (!a.archived) throw new Error(`artifact not archived: ${id}`)
 
     const ids = new Set<string>([id])
-    if (a.isRoadmap) {
-      for (const c of artifacts.values()) if (c.parentId === id && c.archived) ids.add(c.id)
-    }
+    for (const c of descendantsOf(id)) if (c.archived) ids.add(c.id)
     if (a.sessionID) {
       for (const c of artifacts.values()) {
         if (c.type === "report" && c.sessionID === a.sessionID && !c.parentId && c.archived)
@@ -365,10 +394,23 @@ export function createStore(opts: StoreOptions) {
     return road ? { ...road } : undefined
   }
 
-  /** Artifacts (phase plans + reports) that belong to a roadmap, oldest first. */
+  /** Direct children of an artifact (parentId === id), oldest first. */
   function getChildren(parentId: string): Artifact[] {
     return [...artifacts.values()]
       .filter((a) => a.parentId === parentId && !a.archived)
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .map((a) => ({ ...a }))
+  }
+
+  /**
+   * All transitive descendants of an artifact (phase plans AND their reports for
+   * a roadmap; reports for a plan), oldest first. Used to enumerate a roadmap's
+   * full phase breakdown for the agent's context now that phase reports nest
+   * under their phase plan rather than directly under the roadmap.
+   */
+  function getDescendants(parentId: string): Artifact[] {
+    return descendantsOf(parentId)
+      .filter((a) => !a.archived)
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((a) => ({ ...a }))
   }
@@ -399,7 +441,7 @@ export function createStore(opts: StoreOptions) {
     publish, readRevision, addComment, editComment, deleteComment, getComments,
     awaitVerdict, resolveVerdict, disposeAll, get, list, load,
     setArchived, remove,
-    getActivePlan, getLastCompletedPlan, getRoadmap, getChildren,
+    getActivePlan, getLastCompletedPlan, getRoadmap, getChildren, getDescendants,
     hasPending: (id: string) => pending.has(id),
   }
 }

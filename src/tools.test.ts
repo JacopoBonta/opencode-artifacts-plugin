@@ -249,13 +249,24 @@ test("a draft is still validated strictly for required sections", async () => {
   expect(await store.list()).toHaveLength(0)
 })
 
-test("report carries parentId through to the store", async () => {
+test("a phase plan carries its parentId through to the store", async () => {
   const { tool, store } = setup()
   await tool.execute(
-    { type: "report", title: "phase 1 results", content: "done", parentId: "road1" },
+    { type: "plan", title: "phase 1", content: VALID_PLAN, parentId: "road1", draft: true },
     { sessionID: "s1" } as any,
   )
   expect((await store.get("id1"))!.parentId).toBe("road1")
+})
+
+test("a report ignores a caller-passed parentId (it is derived from the active plan)", async () => {
+  const { tool, store } = setup()
+  // No active plan in this session, so the report stays loose (general report)
+  // even though a parentId was supplied — the tool does not plumb it for reports.
+  await tool.execute(
+    { type: "report", title: "research", content: "findings", parentId: "road1" },
+    { sessionID: "s1" } as any,
+  )
+  expect((await store.get("id1"))!.parentId).toBeUndefined()
 })
 
 test("the creating agent name is persisted on the artifact", async () => {

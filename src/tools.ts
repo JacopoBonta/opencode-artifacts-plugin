@@ -23,10 +23,12 @@ export function createPublishTool(deps: ToolDeps) {
       "same artifactId to add a revision, looping until approved. An approved " +
       "verdict may still include comments — treat them as guidance you must honor " +
       "while implementing. type='report' " +
-      "returns immediately; publishing a report also COMPLETES the session's " +
-      "current standalone plan and re-closes the edit gate (start new work with a " +
-      "fresh plan, or resubmit the completed plan). A phase report (with parentId) " +
-      "is a milestone and does NOT complete the roadmap. Content is markdown. " +
+      "returns immediately. A report is automatically LINKED to (and nested " +
+      "under) the session's active plan — you do NOT pass parentId for a report. " +
+      "Publishing a report against a STANDALONE plan also COMPLETES it and " +
+      "re-closes the edit gate (start new work with a fresh plan, or resubmit the " +
+      "completed plan). A report against a roadmap PHASE plan nests under that " +
+      "phase as a milestone and does NOT complete the roadmap. Content is markdown. " +
       "Required workflow: for any implementation request, do a deep analysis then " +
       "publish a plan FIRST — file edits are blocked until a plan is approved — " +
       "then implement, then publish a report. A plan MUST contain these ## " +
@@ -41,7 +43,8 @@ export function createPublishTool(deps: ToolDeps) {
       "the approved roadmap to record them. Then run each " +
       "phase as a cycle: refine its draft if needed and SUBMIT it by re-publishing " +
       "the same artifactId WITHOUT draft (this blocks until approved and unblocks " +
-      "edits), implement, then publish a results report with the same parentId. " +
+      "edits), implement, then publish a results report (it auto-nests under " +
+      "that phase plan — no parentId needed). " +
       "Drafts must already contain all required sections. " +
       "While a plan is still in review, update sections IN PLACE across revisions " +
       "to reflect the current state — never append 'RESOLVED:' notes. " +
@@ -60,7 +63,7 @@ export function createPublishTool(deps: ToolDeps) {
       parentId: tool.schema
         .string()
         .optional()
-        .describe("roadmap artifact id this phase plan/report belongs to"),
+        .describe("roadmap artifact id a phase PLAN belongs to (reports auto-link to the active plan; do not pass for reports)"),
       roadmap: tool.schema
         .boolean()
         .optional()
@@ -116,7 +119,10 @@ export function createPublishTool(deps: ToolDeps) {
         artifactId: args.artifactId,
         sessionID,
         agent: context.agent,
-        parentId: args.parentId,
+        // Only plans carry a caller-supplied parent (a phase plan's roadmap).
+        // A report's parent is derived by the store from the active plan, so it
+        // nests under the plan it reports on — no need to pass one.
+        parentId: args.type === "plan" ? args.parentId : undefined,
         isRoadmap: args.type === "plan" ? args.roadmap : undefined,
         draft: args.type === "plan" ? args.draft : undefined,
         resubmit: args.resubmit,

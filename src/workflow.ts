@@ -201,9 +201,10 @@ companion. This is enforced by the runtime, not optional:
 4. REPORT. When the planned work is complete, publish a report with
    \`publish_artifact(type: "report", ...)\` summarizing what was done and what
    was not. Publishing a report COMPLETES the current plan and RE-CLOSES the edit
-   gate — file edits are blocked again afterward. (A report on a roadmap phase,
-   i.e. with a \`parentId\`, is a phase milestone and does NOT complete the
-   roadmap; continue to the next phase.)
+   gate — file edits are blocked again afterward. A report is AUTOMATICALLY
+   linked to and nested under the session's active plan (you do not pass a
+   parentId for reports). A report against a roadmap PHASE plan is a phase
+   milestone and does NOT complete the roadmap; continue to the next phase.
 
 Standard plan structure — every plan MUST contain these \`##\` sections:
 Context/Analysis, Goals, Approach, Tasks (or Steps), Verification.
@@ -234,7 +235,7 @@ Then run EACH phase as its own cycle, in order:
    artifactId: <phase id>, ...)\`). This blocks until approved and unblocks edits
    for that phase.
 2. Implement the phase.
-3. Publish a results report with the same \`parentId\`.
+3. Publish a results report — it auto-nests under this phase plan (no parentId).
 Move to the next phase and repeat.
 
 ${ROADMAP_TEMPLATE}

@@ -23,9 +23,28 @@ test("buildTree nests children under their roadmap and keeps standalone items to
   // Top-level is newest-first: solo (createdAt 4) before road (createdAt 1).
   expect(tree.map((n) => n.artifact.id)).toEqual(["solo", "road"])
   const road = tree.find((n) => n.artifact.id === "road")!
-  expect(road.children.map((c) => c.id)).toEqual(["phase1", "rep1"])
+  expect(road.children.map((c) => c.artifact.id)).toEqual(["phase1", "rep1"])
   const solo = tree.find((n) => n.artifact.id === "solo")!
   expect(solo.children).toHaveLength(0)
+})
+
+test("buildTree nests a report under its plan to any depth (roadmap -> phase -> report)", () => {
+  const items = [
+    art({ id: "road", isRoadmap: true, createdAt: 1 }),
+    art({ id: "phase1", parentId: "road", createdAt: 2 }),
+    art({ id: "rep1", type: "report", parentId: "phase1", createdAt: 3 }),
+    art({ id: "solo", createdAt: 4 }),
+    art({ id: "soloRep", type: "report", parentId: "solo", createdAt: 5 }),
+  ]
+  const tree = buildTree(items)
+  const road = tree.find((n) => n.artifact.id === "road")!
+  const phase1 = road.children.find((c) => c.artifact.id === "phase1")!
+  // The report hangs off the phase plan, not the roadmap (3 levels deep).
+  expect(road.children.map((c) => c.artifact.id)).toEqual(["phase1"])
+  expect(phase1.children.map((c) => c.artifact.id)).toEqual(["rep1"])
+  // A standalone plan likewise owns its report (2 levels).
+  const solo = tree.find((n) => n.artifact.id === "solo")!
+  expect(solo.children.map((c) => c.artifact.id)).toEqual(["soloRep"])
 })
 
 test("buildTree treats a child with a missing parent as top-level (orphan)", () => {
@@ -34,12 +53,13 @@ test("buildTree treats a child with a missing parent as top-level (orphan)", () 
 })
 
 test("phaseProgress counts approved phase plans, ignoring reports", () => {
+  const leaf = (p: Partial<Artifact> & { id: string }) => ({ artifact: art(p), children: [] })
   const node = {
     artifact: art({ id: "road", isRoadmap: true }),
     children: [
-      art({ id: "p1", status: "approved" }),
-      art({ id: "p2", status: "awaiting_review" }),
-      art({ id: "r1", type: "report", status: "published" }),
+      leaf({ id: "p1", status: "approved" }),
+      leaf({ id: "p2", status: "awaiting_review" }),
+      leaf({ id: "r1", type: "report", status: "published" }),
     ],
   }
   expect(phaseProgress(node)).toEqual({ done: 1, total: 2 })
@@ -75,4 +95,18 @@ test("visibleArtifactIds lists only the focused session's artifacts in tree orde
   expect(visibleArtifactIds(arts, {}, "ses_b")).toEqual(["b1"])
   // No focused session → nothing selectable.
   expect(visibleArtifactIds(arts, {}, undefined)).toEqual([])
+})
+
+test("visibleArtifactIds recurses 3 levels and honors collapse at each level", () => {
+  const arts = [
+    art({ id: "road", sessionID: "ses_a", isRoadmap: true, createdAt: 1 }),
+    art({ id: "phase1", sessionID: "ses_a", parentId: "road", createdAt: 2 }),
+    art({ id: "rep1", sessionID: "ses_a", type: "report", parentId: "phase1", createdAt: 3 }),
+  ]
+  // Fully expanded: roadmap → phase → its report.
+  expect(visibleArtifactIds(arts, {}, "ses_a")).toEqual(["road", "phase1", "rep1"])
+  // Collapsing the phase plan hides its nested report but keeps the phase.
+  expect(visibleArtifactIds(arts, { "rm:phase1": true }, "ses_a")).toEqual(["road", "phase1"])
+  // Collapsing the roadmap hides the whole subtree.
+  expect(visibleArtifactIds(arts, { "rm:road": true }, "ses_a")).toEqual(["road"])
 })

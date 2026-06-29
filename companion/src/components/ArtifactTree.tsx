@@ -1,7 +1,7 @@
 import React from "react"
 import type { Artifact } from "../api"
 
-export interface TreeNode { artifact: Artifact; children: Artifact[] }
+export interface TreeNode { artifact: Artifact; children: TreeNode[] }
 
 const UNGROUPED = "__ungrouped__"
 const ARCHIVED = "__archived__"
@@ -18,10 +18,12 @@ export function sessionLabel(artifacts: Artifact[], key: string): string {
 }
 
 /**
- * Build the 2-level tree for a session's artifacts: top-level nodes (standalone
- * plans/reports and roadmaps) with their phase children nested underneath.
- * Children whose parent is absent fall back to the top level. Pure + exported
- * so it can be unit-tested without a DOM.
+ * Build the nesting tree for a session's artifacts: top-level nodes (standalone
+ * plans/reports and roadmaps) with their descendants nested underneath, to any
+ * depth — a roadmap holds its phase plans, and each phase plan holds the report
+ * that reports on it; a standalone plan holds its report. Children whose parent
+ * is absent fall back to the top level. Pure + exported so it can be unit-tested
+ * without a DOM.
  */
 export function buildTree(artifacts: Artifact[]): TreeNode[] {
   const present = new Set(artifacts.map((a) => a.id))
@@ -33,21 +35,23 @@ export function buildTree(artifacts: Artifact[]): TreeNode[] {
       childrenByParent.set(a.parentId, list)
     }
   }
+  // Descendants keep execution order (oldest first); recurse to any depth.
   const byCreated = (a: Artifact, b: Artifact) => a.createdAt - b.createdAt
+  const toNode = (a: Artifact): TreeNode => ({
+    artifact: a,
+    children: (childrenByParent.get(a.id) ?? []).slice().sort(byCreated).map(toNode),
+  })
   return artifacts
     .filter((a) => !a.parentId || !present.has(a.parentId))
-    // Top-level: newest first. Phase children keep execution order (oldest first).
+    // Top-level: newest first.
     .sort((a, b) => b.createdAt - a.createdAt)
-    .map((a) => ({
-      artifact: a,
-      children: (childrenByParent.get(a.id) ?? []).slice().sort(byCreated),
-    }))
+    .map(toNode)
 }
 
 /** Phase progress for a roadmap node: approved phase plans / total phase plans. */
 export function phaseProgress(node: TreeNode): { done: number; total: number } | null {
   if (!node.artifact.isRoadmap) return null
-  const plans = node.children.filter((c) => c.type === "plan")
+  const plans = node.children.map((c) => c.artifact).filter((c) => c.type === "plan")
   return { done: plans.filter((c) => c.status === "approved").length, total: plans.length }
 }
 
@@ -73,12 +77,16 @@ export function visibleArtifactIds(
   if (!focusedSessionID) return []
   const ids: string[] = []
   const inSession = artifacts.filter((a) => !a.archived && sessionKey(a) === focusedSessionID)
-  for (const node of buildTree(inSession)) {
-    ids.push(node.artifact.id)
-    if (node.children.length && isOpen(collapsed, `rm:${node.artifact.id}`)) {
-      for (const c of node.children) ids.push(c.id)
+  const walk = (nodes: TreeNode[]) => {
+    for (const node of nodes) {
+      ids.push(node.artifact.id)
+      // An expandable node honors its own collapse before recursing into children.
+      if (node.children.length && isOpen(collapsed, `rm:${node.artifact.id}`)) {
+        walk(node.children)
+      }
     }
   }
+  walk(buildTree(inSession))
   return ids
 }
 
@@ -122,29 +130,28 @@ export function ArtifactTree(props: {
   const rowClass = (id: string) =>
     `${id === props.activeId ? " active" : ""}${id === props.keyboardId ? " kbd" : ""}`
 
-  const renderItem = (a: Artifact) => {
-    const badgeType = a.isRoadmap ? "roadmap" : a.type
-    return (
-      <li
-        key={a.id}
-        className={`tree-leaf${rowClass(a.id)}`}
-        onClick={() => props.onOpen(a.id)}
-      >
-        <span className={`badge badge-${badgeType}`}>{badgeType}</span>
-        <span className="title">{a.title}</span>
-        {unseen.has(a.id) && <span className="activity-dot" title="New activity" />}
-        <span className={`status status-${a.status}`}>{a.status.replace(/_/g, " ")}</span>
-      </li>
-    )
-  }
+  // A report linked to its plan reads as a "result"; a general (unlinked) report
+  // keeps "report". Roadmaps and plans are unaffected.
+  const badgeFor = (a: Artifact) =>
+    a.isRoadmap ? "roadmap" : a.type === "report" && a.parentId ? "result" : a.type
 
-  // One node: a roadmap row (with expandable phase children) or a plain leaf.
-  const renderNode = (node: TreeNode) => {
-    if (node.children.length === 0) return renderItem(node.artifact)
+  // One node: an expandable row (any node WITH children — a roadmap, or a plan
+  // with a nested report) or a plain leaf. Recurses to any depth.
+  const renderNode = (node: TreeNode): React.ReactElement => {
     const a = node.artifact
+    const badge = badgeFor(a)
+    if (node.children.length === 0) {
+      return (
+        <li key={a.id} className={`tree-leaf${rowClass(a.id)}`} onClick={() => props.onOpen(a.id)}>
+          <span className={`badge badge-${badge}`}>{badge}</span>
+          <span className="title">{a.title}</span>
+          {unseen.has(a.id) && <span className="activity-dot" title="New activity" />}
+          <span className={`status status-${a.status}`}>{a.status.replace(/_/g, " ")}</span>
+        </li>
+      )
+    }
     const nodeOpen = isOpen(props.collapsed, `rm:${a.id}`)
     const prog = phaseProgress(node)
-    const badgeType = a.isRoadmap ? "roadmap" : a.type
     return (
       <li key={a.id} className="roadmap-node">
         <div className={`roadmap-row${rowClass(a.id)}`} onClick={() => props.onOpen(a.id)}>
@@ -156,7 +163,7 @@ export function ArtifactTree(props: {
           >
             {nodeOpen ? "▾" : "▸"}
           </button>
-          <span className={`badge badge-${badgeType}`}>{badgeType}</span>
+          <span className={`badge badge-${badge}`}>{badge}</span>
           <span className="title">{a.title}</span>
           {unseen.has(a.id) && <span className="activity-dot" title="New activity" />}
           {prog && prog.total > 0 && (
@@ -164,18 +171,47 @@ export function ArtifactTree(props: {
           )}
           <span className={`status status-${a.status}`}>{a.status.replace(/_/g, " ")}</span>
         </div>
-        {nodeOpen && <ul className="artifact-sublist">{node.children.map(renderItem)}</ul>}
+        {nodeOpen && <ul className="artifact-sublist">{node.children.map(renderNode)}</ul>}
+      </li>
+    )
+  }
+
+  // Total descendants of a node, for the delete confirmation copy.
+  const countDescendants = (node: TreeNode): number =>
+    node.children.reduce((n, c) => n + 1 + countDescendants(c), 0)
+
+  // A nested archived row (no per-item actions; archived as part of its parent).
+  // Always expanded so the full archived subtree is visible. Recurses.
+  const renderArchivedChild = (node: TreeNode): React.ReactElement => {
+    const a = node.artifact
+    const badge = badgeFor(a)
+    if (node.children.length === 0) {
+      return (
+        <li key={a.id} className="tree-leaf" onClick={() => props.onOpen(a.id)}>
+          <span className={`badge badge-${badge}`}>{badge}</span>
+          <span className="title">{a.title}</span>
+        </li>
+      )
+    }
+    return (
+      <li key={a.id} className="roadmap-node">
+        <div className="roadmap-row" onClick={() => props.onOpen(a.id)}>
+          <span className={`badge badge-${badge}`}>{badge}</span>
+          <span className="title">{a.title}</span>
+        </div>
+        <ul className="artifact-sublist">{node.children.map(renderArchivedChild)}</ul>
       </li>
     )
   }
 
   const renderArchivedNode = (node: TreeNode) => {
     const a = node.artifact
-    const badgeType = a.isRoadmap ? "roadmap" : a.type
+    const badge = badgeFor(a)
+    const descCount = countDescendants(node)
     return (
       <li key={a.id} className="archived-node">
         <div className={`archived-row${rowClass(a.id)}`} onClick={() => props.onOpen(a.id)}>
-          <span className={`badge badge-${badgeType}`}>{badgeType}</span>
+          <span className={`badge badge-${badge}`}>{badge}</span>
           <span className="title">{a.title}</span>
           <div className="archived-actions">
             <button
@@ -191,8 +227,8 @@ export function ArtifactTree(props: {
               title="Delete permanently"
               onClick={(e) => {
                 e.stopPropagation()
-                const msg = a.isRoadmap
-                  ? `Permanently delete the roadmap "${a.title}" and its ${node.children.length} phase artifact(s)? This cannot be undone.`
+                const msg = a.isRoadmap || descCount > 0
+                  ? `Permanently delete "${a.title}" and its ${descCount} nested artifact(s)? This cannot be undone.`
                   : `Permanently delete "${a.title}"? Related reports in the same session are also removed. This cannot be undone.`
                 if (window.confirm(msg)) props.onDelete?.(a.id)
               }}
@@ -202,7 +238,7 @@ export function ArtifactTree(props: {
           </div>
         </div>
         {node.children.length > 0 && (
-          <ul className="artifact-sublist">{node.children.map(renderItem)}</ul>
+          <ul className="artifact-sublist">{node.children.map(renderArchivedChild)}</ul>
         )}
       </li>
     )

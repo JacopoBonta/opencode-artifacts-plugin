@@ -14,7 +14,11 @@ export function TabBar(props: {
   return (
     <div className="tab-bar" role="tablist">
       {props.tabs.map((a) => {
-        const badgeType = a.isRoadmap ? "roadmap" : a.type
+        const badgeType = a.isRoadmap
+          ? "roadmap"
+          : a.type === "report" && a.parentId
+            ? "result"
+            : a.type
         const isActive = a.id === props.activeId
         return (
           <div
