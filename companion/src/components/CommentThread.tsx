@@ -133,6 +133,7 @@ export function CommentThread(props: {
           </div>
         )}
         <textarea
+          className="comment-input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Add a comment"
