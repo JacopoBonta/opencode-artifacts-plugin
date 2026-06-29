@@ -1,5 +1,5 @@
 import { test, expect, afterEach } from "bun:test"
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createStore } from "./store"
@@ -367,4 +367,122 @@ test("declining a draft plan returns 409 (must be submitted first)", async () =>
     body: JSON.stringify({ status: "declined" }),
   })
   expect(res.status).toBe(409)
+})
+
+// --- input validation (MEDIUM-1) ---
+
+test("posting a comment with a malformed body returns 400", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const bad = async (body: unknown) =>
+    (await fetch(`${srv.url}/api/artifacts/${artifact.id}/comments`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    })).status
+  expect(await bad({ revision: "1", kind: "general", body: "b" })).toBe(400) // revision not a number
+  expect(await bad({ revision: 1, kind: "bogus", body: "b" })).toBe(400) // invalid kind
+  expect(await bad({ revision: 1, kind: "general", body: "" })).toBe(400) // empty body
+  expect(await bad({ revision: 1, kind: "anchor", body: "b" })).toBe(400) // anchor without an anchor
+  // a malformed comment must not be stored
+  expect(await store.getComments(artifact.id)).toHaveLength(0)
+})
+
+test("posting a verdict with an invalid status returns 400", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "yolo" }),
+  })
+  expect(res.status).toBe(400)
+  expect((await store.get(artifact.id))!.status).toBe("awaiting_review")
+})
+
+test("archiving with a non-boolean returns 400", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/archive`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ archived: "yes" }),
+  })
+  expect(res.status).toBe(400)
+})
+
+test("posting a verdict to an unknown (but safe) id returns 404, not a phantom success", async () => {
+  const { srv } = setup()
+  const res = await fetch(`${srv.url}/api/artifacts/does-not-exist/verdict`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "approved" }),
+  })
+  expect(res.status).toBe(404)
+})
+
+// --- capability token auth (HIGH-1 / HIGH-2) ---
+
+function authSetup(token: string) {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  const store = createStore({ root: dir, clock: () => 1, idgen: (() => { let n = 0; return () => `id${++n}` })() })
+  const events = createBroadcaster()
+  const srv = createServer({ store, events, port: 0, staticDir: null, token })
+  stop = srv.stop
+  return { store, events, srv }
+}
+
+test("with a token configured, /api requests without it are rejected (401)", async () => {
+  const { srv } = authSetup("secret")
+  expect((await fetch(`${srv.url}/api/artifacts`)).status).toBe(401)
+  expect((await fetch(`${srv.url}/api/artifacts`, { headers: { "x-artifacts-token": "wrong" } })).status).toBe(401)
+})
+
+test("with a token configured, the correct header is accepted (200)", async () => {
+  const { store, srv } = authSetup("secret")
+  await store.publish({ type: "plan", title: "P", content: "x" })
+  const res = await fetch(`${srv.url}/api/artifacts`, { headers: { "x-artifacts-token": "secret" } })
+  expect(res.status).toBe(200)
+  expect(await res.json()).toHaveLength(1)
+})
+
+test("the SSE stream authenticates via the token query param", async () => {
+  const { srv } = authSetup("secret")
+  // wrong/missing token → 401
+  expect((await fetch(`${srv.url}/api/events?token=nope`)).status).toBe(401)
+  // correct token → an event-stream opens; abort right after connecting
+  const ctrl = new AbortController()
+  const ok = await fetch(`${srv.url}/api/events?token=secret`, { signal: ctrl.signal })
+  expect(ok.status).toBe(200)
+  expect(ok.headers.get("content-type")).toContain("text/event-stream")
+  ctrl.abort()
+})
+
+test("a cross-origin state-changing request is rejected (403) even with the token", async () => {
+  const { store, srv } = authSetup("secret")
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-artifacts-token": "secret",
+      origin: "http://evil.example",
+    },
+    body: JSON.stringify({ status: "approved" }),
+  })
+  expect(res.status).toBe(403)
+})
+
+// --- static serving + path containment (LOW-3) ---
+
+test("static serving returns files under staticDir and falls back to index.html", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "static-"))
+  writeFileSync(join(dir, "index.html"), "<!doctype html><title>app</title>")
+  const store = createStore({ root: mkdtempSync(join(tmpdir(), "artifacts-")), clock: () => 1, idgen: () => "id" })
+  const events = createBroadcaster()
+  const srv = createServer({ store, events, port: 0, staticDir: dir })
+  stop = srv.stop
+
+  const root = await fetch(`${srv.url}/`)
+  expect(root.status).toBe(200)
+  expect(await root.text()).toContain("<title>app</title>")
+  // an unknown non-API route falls back to the SPA index
+  const spa = await fetch(`${srv.url}/artifacts/whatever`)
+  expect(spa.status).toBe(200)
+  expect(await spa.text()).toContain("<title>app</title>")
 })

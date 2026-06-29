@@ -7,12 +7,16 @@ export interface ToolDeps {
   store: Store
   events: Broadcaster
   url: string
+  /** capability token appended to deep links so the companion can authenticate */
+  token?: string
   /** show a toast / open the browser; injected so tests stay headless */
   notify: (message: string, artifactUrl?: string) => void
 }
 
 export function createPublishTool(deps: ToolDeps) {
-  const { store, events, url, notify } = deps
+  const { store, events, url, token, notify } = deps
+  // Carry the token on deep links (the companion reads `?token=` on any route).
+  const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : ""
 
   return tool({
     description:
@@ -127,7 +131,7 @@ export function createPublishTool(deps: ToolDeps) {
         draft: args.type === "plan" ? args.draft : undefined,
         resubmit: args.resubmit,
       })
-      const artifactUrl = `${url}/artifacts/${artifact.id}`
+      const artifactUrl = `${url}/artifacts/${artifact.id}${tokenQuery}`
       events.broadcast({ type: "artifact.published", id: artifact.id })
 
       if (args.type === "report") {

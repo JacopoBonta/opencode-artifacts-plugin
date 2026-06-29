@@ -41,10 +41,17 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
   // it can highlight that session's group. Updated from the chat.message hook.
   let currentSessionID: string | undefined
 
+  // Per-session capability token: the companion server requires it on every
+  // API call, and we hand it to the browser via the URL we open. This keeps the
+  // (loopback-bound) server unreachable to other local processes and to
+  // cross-origin web pages, which can't read the token.
+  const token = crypto.randomUUID()
+
   const staticDir = join(here, "..", "companion", "dist")
   const server = createServer({
     store,
     events,
+    token,
     port: Number(process.env.OPENCODE_ARTIFACTS_PORT ?? 0),
     staticDir: existsSync(staticDir) ? staticDir : null,
     resolveSessionTitle,
@@ -64,6 +71,7 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
     store,
     events,
     url: server.url,
+    token,
     notify: (message) => {
       const p = client.tui.showToast({ body: { message, variant: "info" } })
       // showToast returns a RequestResult which may or may not be a real Promise
@@ -73,7 +81,8 @@ const ArtifactsPlugin: Plugin = async ({ directory, client }) => {
       }
       if (!opened) {
         opened = true
-        openBrowser(server.url).catch(() => {})
+        // Open at the root WITH the token so the companion can capture it.
+        openBrowser(`${server.url}/?token=${encodeURIComponent(token)}`).catch(() => {})
       }
     },
   })

@@ -1,13 +1,22 @@
-import { test, expect, vi, afterEach } from "vitest"
-import { listArtifacts, getArtifact, postComment, patchComment, deleteComment, postVerdict, getRevision } from "./api"
+import { test, expect, vi, afterEach, beforeEach } from "vitest"
+import { listArtifacts, getArtifact, postComment, patchComment, deleteComment, postVerdict, getRevision, subscribeEvents } from "./api"
 
-afterEach(() => vi.restoreAllMocks())
+// All API calls carry the capability token; seed one for the default cases.
+beforeEach(() => sessionStorage.setItem("oc-artifacts-token", "tok"))
+afterEach(() => {
+  vi.restoreAllMocks()
+  sessionStorage.clear()
+})
 
-test("listArtifacts GETs /api/artifacts", async () => {
+const hasToken = expect.objectContaining({
+  headers: expect.objectContaining({ "x-artifacts-token": "tok" }),
+})
+
+test("listArtifacts GETs /api/artifacts with the token header", async () => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [{ id: "a" }] })
   vi.stubGlobal("fetch", fetchMock)
   const out = await listArtifacts()
-  expect(fetchMock).toHaveBeenCalledWith("/api/artifacts")
+  expect(fetchMock).toHaveBeenCalledWith("/api/artifacts", hasToken)
   expect(out).toEqual([{ id: "a" }])
 })
 
@@ -62,12 +71,43 @@ test("deleteComment DELETEs the comment endpoint", async () => {
   )
 })
 
-test("getRevision GETs the revision endpoint", async () => {
+test("getRevision GETs the revision endpoint with the token header", async () => {
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ content: "# rev 2" }) })
   vi.stubGlobal("fetch", fetchMock)
   const out = await getRevision("id1", 2)
-  expect(fetchMock).toHaveBeenCalledWith("/api/artifacts/id1/revisions/2")
+  expect(fetchMock).toHaveBeenCalledWith("/api/artifacts/id1/revisions/2", hasToken)
   expect(out).toEqual({ content: "# rev 2" })
+})
+
+test("requests attach the x-artifacts-token header when a token is present", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) })
+  vi.stubGlobal("fetch", fetchMock)
+  await postComment("id1", { revision: 1, kind: "general", body: "x" })
+  const init = fetchMock.mock.calls[0][1]
+  expect(init.headers["x-artifacts-token"]).toBe("tok")
+})
+
+test("no token header is sent when none is stored", async () => {
+  sessionStorage.clear()
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [] })
+  vi.stubGlobal("fetch", fetchMock)
+  await listArtifacts()
+  // No token → req() passes through the original init (undefined for a GET).
+  expect(fetchMock).toHaveBeenCalledWith("/api/artifacts", undefined)
+})
+
+test("subscribeEvents opens the SSE stream with the token query param", async () => {
+  const instances: { url: string; close: () => void }[] = []
+  class FakeES {
+    onmessage: ((m: { data: string }) => void) | null = null
+    onerror: ((e: unknown) => void) | null = null
+    close = vi.fn()
+    constructor(public url: string) { instances.push(this) }
+  }
+  vi.stubGlobal("EventSource", FakeES as unknown as typeof EventSource)
+  const stop = subscribeEvents(() => {})
+  expect(instances[0].url).toBe("/api/events?token=tok")
+  stop()
 })
 
 test("a non-2xx response rejects instead of returning a bad body", async () => {

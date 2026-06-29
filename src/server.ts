@@ -1,7 +1,13 @@
-import { join } from "node:path"
+import { join, resolve, sep } from "node:path"
 import { existsSync } from "node:fs"
 import type { Store } from "./store"
 import type { Broadcaster } from "./events"
+import {
+  validateCommentInput,
+  validateCommentEdit,
+  validateVerdictInput,
+  validateArchiveInput,
+} from "./validate"
 
 export interface ServerOptions {
   store: Store
@@ -16,7 +22,18 @@ export interface ServerOptions {
   getActiveSession?: () => string | undefined
   /** interrupt (abort) an opencode session's current turn; used to stop the agent on a declined plan */
   interruptSession?: (sessionID: string) => void
+  /**
+   * Per-session capability token. When set, every `/api/*` request must present
+   * it (header `x-artifacts-token`, or `?token=` for the SSE stream, which can't
+   * send headers); mismatches get 401. When omitted, the API is unauthenticated
+   * — used by unit tests and a token-less dev backend (so the Vite dev proxy
+   * keeps working). Production (src/index.ts) always sets one.
+   */
+  token?: string
 }
+
+/** Cap concurrent SSE streams so a misbehaving/abusive client can't exhaust them. */
+const MAX_SSE = 32
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -33,6 +50,10 @@ export function createServer(opts: ServerOptions) {
 
   const server = Bun.serve({
     port: opts.port ?? 0,
+    // Bind to loopback only. Bun's default (no hostname) listens on ALL
+    // interfaces (`*:port`) — which would expose the companion, and the agent's
+    // approval gate, to the whole LAN. 127.0.0.1 keeps it on this machine.
+    hostname: "127.0.0.1",
     // The /api/events SSE stream is intentionally long-lived and mostly idle;
     // disable Bun's default 10s idle timeout so the connection isn't dropped.
     idleTimeout: 0,
@@ -40,8 +61,29 @@ export function createServer(opts: ServerOptions) {
       const url = new URL(req.url)
       const path = url.pathname
 
+      // --- auth: capability token + same-origin guard for /api/* ---
+      // Static (non-/api/) requests are NOT token-gated: the companion bundle is
+      // non-sensitive and must load to bootstrap (it then reads the token from
+      // the URL and sends it on API calls). Skipped entirely when no token is
+      // configured (tests / dev backend).
+      if (opts.token && path.startsWith("/api/")) {
+        const presented =
+          path === "/api/events"
+            ? url.searchParams.get("token") // EventSource can't set headers
+            : req.headers.get("x-artifacts-token")
+        if (presented !== opts.token) return json({ error: "unauthorized" }, 401)
+        // CSRF defense-in-depth: a cross-origin state-changing request carries an
+        // Origin that won't match ours. (The token already blocks attackers who
+        // can't read it; this is belt-and-suspenders.)
+        if (req.method === "POST" || req.method === "PATCH" || req.method === "DELETE") {
+          const origin = req.headers.get("origin")
+          if (origin && origin !== url.origin) return json({ error: "forbidden" }, 403)
+        }
+      }
+
       // --- SSE stream ---
       if (path === "/api/events") {
+        if (events.count() >= MAX_SSE) return json({ error: "too many connections" }, 503)
         const stream = new ReadableStream({
           start(controller) {
             const enc = new TextEncoder()
@@ -113,13 +155,13 @@ export function createServer(opts: ServerOptions) {
         if (ca && (ca.status === "approved" || ca.type === "report")) {
           return json({ error: "read-only artifact" }, 409)
         }
-        let b: any
+        let b: unknown
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
+        const v = validateCommentInput(b)
+        if (!v.ok) return json({ error: v.error }, 400)
         let c
         try {
-          c = await store.addComment(id, {
-            revision: b.revision, kind: b.kind, anchor: b.anchor, body: b.body,
-          })
+          c = await store.addComment(id, v.value)
         } catch {
           return json({ error: "unknown artifact" }, 404)
         }
@@ -145,11 +187,13 @@ export function createServer(opts: ServerOptions) {
           events.broadcast({ type: "comment.updated", id })
           return json({ ok: true })
         }
-        let b: any
+        let b: unknown
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
+        const v = validateCommentEdit(b)
+        if (!v.ok) return json({ error: v.error }, 400)
         let c
         try {
-          c = await store.editComment(id, cid, b.body)
+          c = await store.editComment(id, cid, v.value.body)
         } catch {
           return json({ error: "not found" }, 404)
         }
@@ -162,29 +206,34 @@ export function createServer(opts: ServerOptions) {
         const id = verdictMatch[1]
         if (!safeId(id)) return json({ error: "not found" }, 404)
         const va = await store.get(id)
-        if (va && (va.status === "approved" || va.type === "report")) {
+        // Unknown artifact: reject explicitly rather than silently "succeeding"
+        // (broadcasting an update for a phantom id).
+        if (!va) return json({ error: "not found" }, 404)
+        if (va.status === "approved" || va.type === "report") {
           return json({ error: "read-only artifact" }, 409)
         }
         // A draft has no agent awaiting a verdict; it must be submitted first.
-        if (va && va.status === "draft") {
+        if (va.status === "draft") {
           return json({ error: "draft not submitted for review" }, 409)
         }
-        let b: any
+        let b: unknown
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
+        const v = validateVerdictInput(b)
+        if (!v.ok) return json({ error: v.error }, 400)
         // Carry the reviewer's unresolved comments to the agent for ALL
         // verdicts — an approval with comments means "proceed, but honor these".
         const comments = (await store.getComments(id)).filter((c) => !c.resolved)
         await store.resolveVerdict(
           id,
-          b.status === "approved"
+          v.value.status === "approved"
             ? { status: "approved", comments }
-            : b.status === "declined"
-              ? { status: "declined", reason: typeof b.reason === "string" ? b.reason : undefined, comments }
+            : v.value.status === "declined"
+              ? { status: "declined", reason: v.value.reason, comments }
               : { status: "changes_requested", comments },
         )
         // Declining rejects the work outright: interrupt the agent's parked turn
         // so it stops instead of waiting on (or acting on) the resolved tool call.
-        if (b.status === "declined" && va?.sessionID) opts.interruptSession?.(va.sessionID)
+        if (v.value.status === "declined" && va.sessionID) opts.interruptSession?.(va.sessionID)
         events.broadcast({ type: "artifact.updated", id })
         return json({ ok: true })
       }
@@ -193,10 +242,12 @@ export function createServer(opts: ServerOptions) {
       if (archiveMatch && req.method === "POST") {
         const id = archiveMatch[1]
         if (!safeId(id)) return json({ error: "not found" }, 404)
-        let b: any
+        let b: unknown
         try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
+        const v = validateArchiveInput(b)
+        if (!v.ok) return json({ error: v.error }, 400)
         try {
-          await store.setArchived(id, b.archived === true)
+          await store.setArchived(id, v.value.archived)
         } catch {
           return json({ error: "unknown artifact" }, 404)
         }
@@ -221,7 +272,13 @@ export function createServer(opts: ServerOptions) {
       if (staticDir && !path.startsWith("/api/")) {
         const rel = path === "/" ? "index.html" : path.slice(1)
         const file = join(staticDir, rel)
-        if (existsSync(file)) return new Response(Bun.file(file))
+        // Containment: never serve a path that resolves outside staticDir. URL
+        // normalization already collapses `/../`, but enforce it explicitly so
+        // safety doesn't depend on parser behavior (defense in depth).
+        const rootDir = resolve(staticDir)
+        const resolved = resolve(file)
+        const contained = resolved === rootDir || resolved.startsWith(rootDir + sep)
+        if (contained && existsSync(file)) return new Response(Bun.file(file))
         const index = join(staticDir, "index.html")
         if (existsSync(index)) return new Response(Bun.file(index)) // SPA fallback
       }

@@ -23,15 +23,24 @@ export type ServerEvent =
   | { type: "session.active"; sessionID?: string }
   | { type: "ping" }
 
+import { getToken } from "./token"
+
 const jsonPost = (body: unknown) => ({
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify(body),
 })
 
+/** Merge the capability token header (when present) into a request's headers. */
+function withToken(init?: RequestInit): RequestInit | undefined {
+  const token = getToken()
+  if (!token) return init
+  return { ...init, headers: { ...(init?.headers as Record<string, string>), "x-artifacts-token": token } }
+}
+
 /** fetch + status check; throws on a non-2xx so callers can surface the failure. */
 async function req(input: string, init?: RequestInit): Promise<Response> {
-  const res = init ? await fetch(input, init) : await fetch(input)
+  const res = await fetch(input, withToken(init))
   if (!res.ok) throw new Error(`request to ${input} failed: ${res.status}`)
   return res
 }
@@ -84,7 +93,9 @@ export function subscribeEvents(
   onEvent: (e: ServerEvent) => void,
   onError?: (e: Event) => void,
 ): () => void {
-  const es = new EventSource("/api/events")
+  // EventSource can't set headers, so the token rides as a query param.
+  const token = getToken()
+  const es = new EventSource(`/api/events${token ? `?token=${encodeURIComponent(token)}` : ""}`)
   es.onmessage = (m) => {
     // A malformed frame must not throw out of the handler (and be swallowed by
     // EventSource); skip it instead.

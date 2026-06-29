@@ -35,8 +35,10 @@ interface Pending {
 export function createStore(opts: StoreOptions) {
   const root = opts.root
   const clock = opts.clock ?? (() => Date.now())
-  let counter = 0
-  const idgen = opts.idgen ?? (() => `${clock()}-${++counter}`)
+  // Unguessable by default so an artifact id is never a weak second factor for
+  // the companion API (the capability token is the real gate). Tests inject a
+  // deterministic idgen via StoreOptions.
+  const idgen = opts.idgen ?? (() => crypto.randomUUID())
 
   const artifacts = new Map<string, Artifact>()
   const comments = new Map<string, Comment[]>()

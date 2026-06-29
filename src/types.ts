@@ -64,6 +64,8 @@ export interface Artifact {
   declineReason?: string
 }
 
+export type VerdictStatus = "approved" | "changes_requested" | "declined"
+
 export type Verdict =
   | { status: "approved"; comments?: Comment[] }
   | { status: "changes_requested"; comments: Comment[] }
