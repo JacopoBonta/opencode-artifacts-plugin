@@ -19,6 +19,7 @@ export type ServerEvent =
   | { type: "artifact.archived"; id: string }
   | { type: "artifact.deleted"; id: string }
   | { type: "comment.added"; id: string }
+  | { type: "comment.updated"; id: string }
   | { type: "session.active"; sessionID?: string }
   | { type: "ping" }
 
@@ -49,6 +50,22 @@ export async function postComment(
   c: { revision: number; kind: "anchor" | "general"; anchor?: Anchor; body: string },
 ): Promise<Comment> {
   return (await req(`/api/artifacts/${id}/comments`, jsonPost(c))).json()
+}
+export async function patchComment(
+  id: string,
+  commentId: string,
+  body: string,
+): Promise<Comment> {
+  return (
+    await req(`/api/artifacts/${id}/comments/${commentId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body }),
+    })
+  ).json()
+}
+export async function deleteComment(id: string, commentId: string): Promise<void> {
+  await req(`/api/artifacts/${id}/comments/${commentId}`, { method: "DELETE" })
 }
 export async function postVerdict(
   id: string,

@@ -4,6 +4,7 @@ export type ServerEvent =
   | { type: "artifact.archived"; id: string }
   | { type: "artifact.deleted"; id: string }
   | { type: "comment.added"; id: string }
+  | { type: "comment.updated"; id: string }
   | { type: "session.active"; sessionID?: string }
   | { type: "ping" }
 

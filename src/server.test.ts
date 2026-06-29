@@ -60,6 +60,55 @@ test("POST comment then verdict resolves a pending plan", async () => {
   }
 })
 
+test("PATCH a comment edits its body", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const c = await store.addComment(artifact.id, { revision: 1, kind: "general", body: "old" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/comments/${c.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body: "new" }),
+  })
+  expect(res.status).toBe(200)
+  expect((await res.json()).body).toBe("new")
+  expect((await store.getComments(artifact.id))[0].body).toBe("new")
+})
+
+test("DELETE removes a comment", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const c = await store.addComment(artifact.id, { revision: 1, kind: "general", body: "drop" })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/comments/${c.id}`, {
+    method: "DELETE",
+  })
+  expect(res.status).toBe(200)
+  expect(await store.getComments(artifact.id)).toHaveLength(0)
+})
+
+test("PATCH/DELETE a missing comment returns 404", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const patch = await fetch(`${srv.url}/api/artifacts/${artifact.id}/comments/nope`, {
+    method: "PATCH", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body: "y" }),
+  })
+  expect(patch.status).toBe(404)
+  const del = await fetch(`${srv.url}/api/artifacts/${artifact.id}/comments/nope`, { method: "DELETE" })
+  expect(del.status).toBe(404)
+})
+
+test("editing a comment on an approved plan returns 409", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x" })
+  const c = await store.addComment(artifact.id, { revision: 1, kind: "general", body: "note" })
+  await store.resolveVerdict(artifact.id, { status: "approved", comments: [] })
+  const res = await fetch(`${srv.url}/api/artifacts/${artifact.id}/comments/${c.id}`, {
+    method: "PATCH", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body: "y" }),
+  })
+  expect(res.status).toBe(409)
+})
+
 test("posting a comment to a report returns 409 (reports are read-only)", async () => {
   const { store, srv } = setup()
   const { artifact } = await store.publish({ type: "report", title: "R", content: "done" })

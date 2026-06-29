@@ -179,6 +179,37 @@ export function createStore(opts: StoreOptions) {
     return c
   }
 
+  /**
+   * Edit the body of an unsubmitted comment. Only an *active* (unresolved)
+   * comment can be changed: a resolved comment is the record of what already
+   * rode to the agent on a verdict/revision and is immutable. Throws on an
+   * unknown artifact, unknown comment, or a resolved comment.
+   */
+  async function editComment(id: string, commentId: string, body: string): Promise<Comment> {
+    const list = comments.get(id)
+    if (!list) throw new Error(`unknown artifact: ${id}`)
+    const c = list.find((x) => x.id === commentId)
+    if (!c) throw new Error(`unknown comment: ${commentId}`)
+    if (c.resolved) throw new Error(`comment already submitted: ${commentId}`)
+    c.body = body
+    await persistComments(id)
+    return { ...c }
+  }
+
+  /**
+   * Delete an unsubmitted comment. Mirrors editComment's "active only" guard so
+   * a resolved comment (already sent to the agent) can never be removed.
+   */
+  async function deleteComment(id: string, commentId: string): Promise<void> {
+    const list = comments.get(id)
+    if (!list) throw new Error(`unknown artifact: ${id}`)
+    const c = list.find((x) => x.id === commentId)
+    if (!c) throw new Error(`unknown comment: ${commentId}`)
+    if (c.resolved) throw new Error(`comment already submitted: ${commentId}`)
+    comments.set(id, list.filter((x) => x.id !== commentId))
+    await persistComments(id)
+  }
+
   async function getComments(id: string): Promise<Comment[]> {
     // Deep-ish copy so callers can't mutate stored Comment objects in place.
     return (comments.get(id) ?? []).map((c) => ({ ...c }))
@@ -365,7 +396,7 @@ export function createStore(opts: StoreOptions) {
   }
 
   return {
-    publish, readRevision, addComment, getComments,
+    publish, readRevision, addComment, editComment, deleteComment, getComments,
     awaitVerdict, resolveVerdict, disposeAll, get, list, load,
     setArchived, remove,
     getActivePlan, getLastCompletedPlan, getRoadmap, getChildren,

@@ -2,8 +2,30 @@ import React, { useState, useRef, useEffect } from "react"
 import type { Comment } from "../api"
 import { flashElement } from "../flash"
 
-function CommentItem({ c, onClick }: { c: Comment; onClick?: (id: string) => void }) {
-  const clickable = c.kind === "anchor" && !!onClick
+function CommentItem({
+  c,
+  onClick,
+  onEdit,
+  onDelete,
+}: {
+  c: Comment
+  onClick?: (id: string) => void
+  onEdit?: (id: string, body: string) => void
+  onDelete?: (id: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(c.body)
+  // Edit/Delete are offered only for active comments (the parent passes the
+  // callbacks only there); a clickable anchor stops being clickable while edited.
+  const editable = !!onEdit || !!onDelete
+  const clickable = c.kind === "anchor" && !!onClick && !editing
+
+  function save() {
+    const trimmed = draft.trim()
+    if (trimmed) onEdit?.(c.id, trimmed)
+    setEditing(false)
+  }
+
   return (
     <div
       className={`comment${c.resolved ? " resolved" : ""}${clickable ? " clickable" : ""}`}
@@ -11,7 +33,39 @@ function CommentItem({ c, onClick }: { c: Comment; onClick?: (id: string) => voi
       onClick={clickable ? () => onClick!(c.id) : undefined}
     >
       {c.anchor?.quote && <blockquote>{c.anchor.quote}</blockquote>}
-      <p>{c.body}</p>
+      {editing ? (
+        <div className="comment-edit">
+          <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <div className="comment-actions">
+            <button type="button" onClick={save}>Save</button>
+            <button type="button" onClick={() => { setDraft(c.body); setEditing(false) }}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p>{c.body}</p>
+          {editable && (
+            <div className="comment-actions">
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setDraft(c.body); setEditing(true) }}
+                >
+                  Edit
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onDelete(c.id) }}
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -19,6 +73,8 @@ function CommentItem({ c, onClick }: { c: Comment; onClick?: (id: string) => voi
 export function CommentThread(props: {
   comments: Comment[]
   onAdd: (body: string) => void
+  onEdit?: (id: string, body: string) => void
+  onDelete?: (id: string) => void
   title?: string
   readOnly?: boolean
   onCommentClick?: (id: string) => void
@@ -38,6 +94,17 @@ export function CommentThread(props: {
   }, [props.flashCommentId, props.flashKey])
 
   const item = (c: Comment) => <CommentItem key={c.id} c={c} onClick={props.onCommentClick} />
+  // Active comments in an editable thread get Edit/Delete; resolved and
+  // read-only comments stay immutable (no callbacks passed).
+  const editableItem = (c: Comment) => (
+    <CommentItem
+      key={c.id}
+      c={c}
+      onClick={props.onCommentClick}
+      onEdit={props.onEdit}
+      onDelete={props.onDelete}
+    />
+  )
 
   let body: React.ReactNode
   if (props.readOnly) {
@@ -52,7 +119,7 @@ export function CommentThread(props: {
     const resolved = props.comments.filter((c) => c.resolved)
     body = (
       <>
-        {active.map(item)}
+        {active.map(editableItem)}
         {resolved.length > 0 && (
           <div className="resolved-section">
             <button

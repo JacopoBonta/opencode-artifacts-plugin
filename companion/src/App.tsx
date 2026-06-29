@@ -249,6 +249,26 @@ export function App() {
     }
   }
 
+  async function editComment(commentId: string, body: string) {
+    if (!detail) return
+    try {
+      await api.patchComment(detail.artifact.id, commentId, body)
+      refreshDetail(detail.artifact.id)
+    } catch {
+      setError("Couldn't update the comment.")
+    }
+  }
+
+  async function deleteComment(commentId: string) {
+    if (!detail) return
+    try {
+      await api.deleteComment(detail.artifact.id, commentId)
+      refreshDetail(detail.artifact.id)
+    } catch {
+      setError("Couldn't delete the comment.")
+    }
+  }
+
   async function verdict(
     status: "approved" | "changes_requested" | "declined",
     reason?: string,
@@ -413,6 +433,8 @@ export function App() {
                   title="Comments"
                   comments={detail.comments}
                   onAdd={(body) => addComment(body, pendingAnchor)}
+                  onEdit={editComment}
+                  onDelete={deleteComment}
                   onCommentClick={onCommentClick}
                   flashCommentId={flashComment?.id}
                   flashKey={flashComment?.key}
