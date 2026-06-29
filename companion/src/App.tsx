@@ -2,39 +2,43 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import "./App.css"
 import * as api from "./api"
 import type { Anchor, Artifact, ArtifactDetail } from "./api"
-import { ArtifactList, recentSessions, sessionKey } from "./components/ArtifactList"
+import { ArtifactTree, visibleArtifactIds, isOpen } from "./components/ArtifactTree"
+import { TabBar } from "./components/TabBar"
+import { CommandPalette } from "./components/CommandPalette"
 import { ArtifactView } from "./components/ArtifactView"
 import { CommentThread } from "./components/CommentThread"
 import { ActionBar } from "./components/ActionBar"
 import { RevisionSwitcher } from "./components/RevisionSwitcher"
 import { ThemeToggle } from "./components/ThemeToggle"
 import { ReadingWidthToggle } from "./components/ReadingWidthToggle"
-import { ScopeToggle } from "./components/ScopeToggle"
-import { SessionsIntro } from "./components/SessionsIntro"
 import { ResizeHandle } from "./components/ResizeHandle"
+import { useShortcuts } from "./shortcuts"
 import {
   getRailLeft, getRailRight, setRailLeft, setRailRight, clampLeft, clampRight,
-  getScope, setScope as persistScope, type Scope,
+  getOpenTabs, setOpenTabs as persistOpenTabs,
+  getActiveTab, setActiveTab as persistActiveTab,
 } from "./layoutPrefs"
 
 export function App() {
   const [railLeft, setRailLeftW] = useState(getRailLeft)
   const [railRight, setRailRightW] = useState(getRailRight)
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
-  const [selectedId, setSelectedId] = useState<string>()
+  // Editor tabs: ids of open artifacts (in order) and the active one. Restored
+  // from localStorage, then pruned against the loaded list.
+  const [openTabs, setOpenTabs] = useState<string[]>(getOpenTabs)
+  const [activeTabId, setActiveTabId] = useState<string | undefined>(getActiveTab)
   const [detail, setDetail] = useState<ArtifactDetail>()
   const [pendingAnchor, setPendingAnchor] = useState<Anchor>()
   const [connected, setConnected] = useState(true)
-  // The opencode session the user is currently in (pushed over SSE), and the set
-  // of artifact ids with new/updated activity not yet opened — drives the
-  // current-session highlight and the activity dots.
+  // The opencode session the user is currently in (pushed over SSE) — highlights
+  // the tree and auto-opens that session's latest artifact.
   const [activeSessionID, setActiveSessionID] = useState<string>()
-  // The session the rail centers on in "This session" scope. Distinct from
-  // activeSessionID so the user can focus a session manually from the intro page;
-  // it follows the live session whenever that changes (see the effect below).
-  const [focusedSessionID, setFocusedSessionID] = useState<string>()
-  const [scope, setScopeState] = useState<Scope>(getScope)
+  // Artifact ids with new/updated activity not yet opened — drives tree + tab dots.
   const [unseen, setUnseen] = useState<Set<string>>(new Set())
+  // Tree collapse state (session keys, `rm:<id>`, archived) and the keyboard cursor.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [treeIndex, setTreeIndex] = useState(0)
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const [submittingVerdict, setSubmittingVerdict] = useState(false)
   // undefined = viewing the latest revision
   const [viewedRevision, setViewedRevision] = useState<number>()
@@ -48,10 +52,12 @@ export function App() {
   // A transient fetch-error message (distinct from `connected`, which tracks the
   // SSE stream). Cleared by the next successful list/detail refresh.
   const [error, setError] = useState<string>()
-  // Current selection, mirrored into a ref so the SSE handler can read it without
-  // re-subscribing on every selection change.
-  const selectedIdRef = useRef<string>()
-  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+  // Tab state mirrored into refs so the once-subscribed SSE handler and the
+  // close-tab callback can read it without re-subscribing.
+  const openTabsRef = useRef<string[]>(openTabs)
+  const activeTabIdRef = useRef<string | undefined>(activeTabId)
+  useEffect(() => { openTabsRef.current = openTabs }, [openTabs])
+  useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
   // Monotonic counters: a slow, stale response must not clobber a newer one.
   const detailSeq = useRef(0)
   const revSeq = useRef(0)
@@ -76,23 +82,69 @@ export function App() {
     }
   }, [])
 
-  const select = useCallback((id: string) => {
-    setSelectedId(id)
-    selectedIdRef.current = id
-    setPendingAnchor(undefined)
-    setViewedRevision(undefined)
-    setHistoricalContent(undefined)
-    // Opening an artifact clears its activity dot.
+  // Activate an open tab: focus it and clear its activity dot.
+  const activate = useCallback((id: string) => {
+    setActiveTabId(id)
     setUnseen((prev) => {
       if (!prev.has(id)) return prev
       const next = new Set(prev)
       next.delete(id)
       return next
     })
-    refreshDetail(id)
-  }, [refreshDetail])
+  }, [])
+
+  // Open (or focus, if already open) an artifact in a tab.
+  const openTab = useCallback((id: string) => {
+    setOpenTabs((prev) => (prev.includes(id) ? prev : [...prev, id]))
+    activate(id)
+  }, [activate])
+
+  // Close a tab; if it was active, activate the left neighbor (else the right).
+  const closeTab = useCallback((id: string) => {
+    const prev = openTabsRef.current
+    const idx = prev.indexOf(id)
+    if (idx === -1) return
+    const next = prev.filter((x) => x !== id)
+    setOpenTabs(next)
+    if (activeTabIdRef.current === id) {
+      setActiveTabId(next[idx - 1] ?? next[idx] ?? undefined)
+    }
+  }, [])
+
+  const toggleCollapse = useCallback((key: string) => {
+    setCollapsed((c) => ({ ...c, [key]: isOpen(c, key) }))
+  }, [])
 
   useEffect(() => { refreshList() }, [refreshList])
+
+  // Persist tabs so the workspace is restored on reload.
+  useEffect(() => { persistOpenTabs(openTabs) }, [openTabs])
+  useEffect(() => { persistActiveTab(activeTabId) }, [activeTabId])
+
+  // Prune tabs for artifacts that no longer exist once the list loads/changes.
+  useEffect(() => {
+    if (!artifacts.length) return
+    const exists = new Set(artifacts.map((a) => a.id))
+    setOpenTabs((prev) => {
+      const next = prev.filter((id) => exists.has(id))
+      return next.length === prev.length ? prev : next
+    })
+  }, [artifacts])
+
+  // Keep the active tab pointing at an open tab (or nothing).
+  useEffect(() => {
+    if (activeTabId && !openTabs.includes(activeTabId)) {
+      setActiveTabId(openTabs[openTabs.length - 1])
+    }
+  }, [openTabs, activeTabId])
+
+  // Fetch the active tab's detail (and reset the revision view) when it changes.
+  useEffect(() => {
+    if (!activeTabId) { setDetail(undefined); return }
+    setViewedRevision(undefined)
+    setHistoricalContent(undefined)
+    refreshDetail(activeTabId)
+  }, [activeTabId, refreshDetail])
 
   useEffect(() => {
     return api.subscribeEvents(
@@ -105,8 +157,7 @@ export function App() {
         }
         refreshList()
         if (e.type === "artifact.deleted") {
-          // Drop any pending dot for the removed artifact; the membership effect
-          // clears the selection once the refreshed list arrives.
+          closeTab(e.id)
           setUnseen((prev) => {
             if (!prev.has(e.id)) return prev
             const next = new Set(prev)
@@ -115,15 +166,14 @@ export function App() {
           })
           return
         }
-        const sel = selectedIdRef.current
-        if (sel && e.id === sel) {
+        if (e.id === activeTabIdRef.current) {
           // A new revision may have arrived — return to the latest view.
           setViewedRevision(undefined)
           setHistoricalContent(undefined)
-          refreshDetail(sel)
+          refreshDetail(e.id)
           return
         }
-        // New/updated activity on an artifact that isn't open — flag it.
+        // New/updated activity on an artifact that isn't the active tab — flag it.
         if (
           e.type === "artifact.published" ||
           e.type === "artifact.updated" ||
@@ -137,56 +187,62 @@ export function App() {
       },
       () => setConnected(false),
     )
-    // Subscribe ONCE: the handler reads the live selection from selectedIdRef, so
-    // it never needs to tear down/recreate the EventSource (which would drop
-    // events during the reconnect window) when the selection changes.
-  }, [refreshList, refreshDetail])
+    // Subscribe ONCE: the handler reads live tab state from refs, so it never
+    // tears down/recreates the EventSource (which would drop events) on a switch.
+  }, [refreshList, refreshDetail, closeTab])
 
-  // Follow the live session: when the user moves to a session in opencode, focus
-  // it. Keyed on activeSessionID, so a manual "back to sessions" (which clears the
-  // focus) isn't immediately re-overridden — only a real session switch re-focuses.
+  // Land in the live work: when the opencode session changes, open its
+  // most-recently-updated artifact once. Keyed on the session (not on openTabs)
+  // and guarded by a ref, so closing that tab doesn't immediately reopen it and a
+  // routine list refresh doesn't reopen it either. If the session has no artifacts
+  // yet, we leave the ref unset and retry when the list next changes.
+  const autoOpenedFor = useRef<string>()
   useEffect(() => {
-    if (activeSessionID) setFocusedSessionID(activeSessionID)
-  }, [activeSessionID])
-
-  const setScope = useCallback((s: Scope) => {
-    setScopeState(s)
-    persistScope(s)
-  }, [])
-
-  // Recent sessions for the intro page, and the effective focus. With a single
-  // session there's nothing to choose, so focus it implicitly rather than showing
-  // a one-card intro; with several, the intro lets the user pick.
-  const sessions = useMemo(() => recentSessions(artifacts, unseen), [artifacts, unseen])
-  const focusKey = focusedSessionID ?? (sessions.length === 1 ? sessions[0].key : undefined)
-
-  const focusSession = useCallback((key: string) => setFocusedSessionID(key), [])
-  const showSessions = useCallback(() => {
-    setFocusedSessionID(undefined)
-    setSelectedId(undefined)
-    setDetail(undefined)
-  }, [])
-
-  // Auto-select the focused session's most recently updated artifact once the list
-  // loads and nothing is selected. Order-independent so it's stable across
-  // refreshes — the raw list arrives in filesystem order, not recency order, so
-  // picking by array position would lock onto an arbitrary old artifact. With no
-  // focused session we leave the selection empty so the sessions intro shows.
-  useEffect(() => {
-    if (selectedId || !artifacts.length || !focusKey) return
-    const pool = artifacts.filter((a) => !a.archived && sessionKey(a) === focusKey)
+    if (!activeSessionID || !artifacts.length) return
+    if (autoOpenedFor.current === activeSessionID) return
+    const pool = artifacts.filter((a) => !a.archived && a.sessionID === activeSessionID)
     if (!pool.length) return
-    const target = pool.reduce((best, a) => (a.updatedAt > best.updatedAt ? a : best))
-    select(target.id)
-  }, [artifacts, selectedId, focusKey, select])
-
-  // Clear the selection when the selected artifact is gone (e.g. deleted).
-  useEffect(() => {
-    if (selectedId && artifacts.length && !artifacts.some((a) => a.id === selectedId)) {
-      setSelectedId(undefined)
-      setDetail(undefined)
+    autoOpenedFor.current = activeSessionID
+    const hasTab = openTabsRef.current.some(
+      (id) => artifacts.find((a) => a.id === id)?.sessionID === activeSessionID,
+    )
+    if (!hasTab) {
+      const target = pool.reduce((best, a) => (a.updatedAt > best.updatedAt ? a : best))
+      openTab(target.id)
     }
-  }, [artifacts, selectedId])
+  }, [activeSessionID, artifacts, openTab])
+
+  const openArtifacts = useMemo(
+    () => openTabs.map((id) => artifacts.find((a) => a.id === id)).filter((a): a is Artifact => !!a),
+    [openTabs, artifacts],
+  )
+  // The explorer is scoped to the current session: the live opencode session,
+  // falling back to the active tab's session so it isn't empty when you've opened
+  // something with no live session.
+  const activeTabSession = openArtifacts.find((a) => a.id === activeTabId)?.sessionID
+  const focusedSessionID = activeSessionID ?? activeTabSession
+  const isLive = !!activeSessionID && focusedSessionID === activeSessionID
+  const visibleIds = useMemo(
+    () => visibleArtifactIds(artifacts, collapsed, focusedSessionID),
+    [artifacts, collapsed, focusedSessionID],
+  )
+  const kbdIndex = visibleIds.length ? Math.min(treeIndex, visibleIds.length - 1) : 0
+  const keyboardId = visibleIds[kbdIndex]
+
+  // Keep the keyboard cursor on the active artifact when it's visible.
+  useEffect(() => {
+    if (!activeTabId) return
+    const i = visibleIds.indexOf(activeTabId)
+    if (i >= 0) setTreeIndex(i)
+  }, [activeTabId, visibleIds])
+
+  const cycleTab = useCallback((dir: 1 | -1) => {
+    const tabs = openTabsRef.current
+    if (!tabs.length) return
+    const cur = activeTabIdRef.current ? tabs.indexOf(activeTabIdRef.current) : -1
+    const next = (cur + dir + tabs.length) % tabs.length
+    activate(tabs[next])
+  }, [activate])
 
   async function archive(id: string) {
     try {
@@ -301,6 +357,27 @@ export function App() {
     ? (isLatest ? detail.comments : detail.comments.filter((c) => c.revision === viewing))
     : []
 
+  // Keyboard layer. Config is re-read from a ref each keypress, so these closures
+  // always see fresh state.
+  useShortcuts({
+    paletteOpen,
+    onPaletteToggle: () => setPaletteOpen((o) => !o),
+    onEscape: () => {
+      if (paletteOpen) setPaletteOpen(false)
+      else if (pendingAnchor) setPendingAnchor(undefined)
+    },
+    onTreeDown: () => setTreeIndex((i) => Math.min(i + 1, Math.max(visibleIds.length - 1, 0))),
+    onTreeUp: () => setTreeIndex((i) => Math.max(i - 1, 0)),
+    onOpenSelected: () => { if (keyboardId) openTab(keyboardId) },
+    onNextTab: () => cycleTab(1),
+    onPrevTab: () => cycleTab(-1),
+    onCloseTab: () => { if (activeTabId) closeTab(activeTabId) },
+    onApprove: () => { if (canApprove && !submittingVerdict) verdict("approved") },
+    onComment: () => {
+      document.querySelector<HTMLTextAreaElement>(".comments-rail .comment-input")?.focus()
+    },
+  })
+
   return (
     <div
       className="layout"
@@ -326,30 +403,38 @@ export function App() {
       />
       <aside className="rail">
         <div className="rail-header">
-          <h2>Artifacts</h2>
+          <h2>Explorer</h2>
           <div className="rail-header-actions">
             <ReadingWidthToggle />
             <ThemeToggle />
           </div>
         </div>
-        <ScopeToggle scope={scope} onChange={setScope} />
-        <ArtifactList
+        <ArtifactTree
           artifacts={artifacts}
-          selectedId={selectedId}
-          activeSessionID={activeSessionID}
-          focusedSessionID={focusKey}
-          scope={scope}
+          focusedSessionID={focusedSessionID}
+          isLive={isLive}
+          activeId={activeTabId}
+          keyboardId={keyboardId}
+          collapsed={collapsed}
           unseenIds={unseen}
-          onSelect={select}
-          onShowAll={() => setScope("all")}
-          onShowSessions={showSessions}
+          onToggle={toggleCollapse}
+          onOpen={openTab}
           onUnarchive={unarchive}
           onDelete={remove}
         />
       </aside>
       <main className="main">
+        {openArtifacts.length > 0 && (
+          <TabBar
+            tabs={openArtifacts}
+            activeId={activeTabId}
+            unseenIds={unseen}
+            onActivate={activate}
+            onClose={closeTab}
+          />
+        )}
         {detail ? (
-          <>
+          <div className="editor">
             <header className="main-header">
               <div className="main-header-left">
                 <h1>{detail.artifact.title}</h1>
@@ -400,11 +485,20 @@ export function App() {
               flashAnchorId={flashAnchor?.id}
               flashKey={flashAnchor?.key}
             />
-          </>
-        ) : !focusKey && !selectedId ? (
-          <SessionsIntro sessions={sessions} onPick={focusSession} activeSessionID={activeSessionID} />
+          </div>
+        ) : activeTabId ? (
+          <p className="empty">Loading…</p>
         ) : (
-          <p className="empty">Select an artifact.</p>
+          <div className="empty-cheatsheet">
+            <h2>No artifact open</h2>
+            <p>Open one from the explorer, or jump to any with the command palette.</p>
+            <ul className="shortcut-list">
+              <li><kbd>⌘</kbd><kbd>K</kbd><span>go to artifact</span></li>
+              <li><kbd>j</kbd><kbd>k</kbd><span>move in the tree · <kbd>↵</kbd> open</span></li>
+              <li><kbd>[</kbd><kbd>]</kbd><span>switch tabs · <kbd>w</kbd> close</span></li>
+              <li><kbd>a</kbd><span>approve · <kbd>c</kbd> comment</span></li>
+            </ul>
+          </div>
         )}
       </main>
       <aside className="rail comments-rail">
@@ -474,6 +568,13 @@ export function App() {
           </>
         )}
       </aside>
+      {paletteOpen && (
+        <CommandPalette
+          artifacts={artifacts}
+          onOpen={openTab}
+          onClose={() => setPaletteOpen(false)}
+        />
+      )}
     </div>
   )
 }

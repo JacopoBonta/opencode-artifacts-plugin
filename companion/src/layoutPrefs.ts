@@ -4,13 +4,12 @@
 import { readStored, writeStored } from "./storage"
 
 export type ReadingWidth = "comfortable" | "stretched"
-// "session" shows only the focused session's artifacts; "all" shows every session.
-export type Scope = "session" | "all"
 
 const READING_KEY = "oc-artifacts-reading"
-const SCOPE_KEY = "oc-artifacts-scope"
 const LEFT_KEY = "oc-artifacts-rail-left"
 const RIGHT_KEY = "oc-artifacts-rail-right"
+const TABS_KEY = "oc-artifacts-open-tabs"
+const ACTIVE_TAB_KEY = "oc-artifacts-active-tab"
 
 // Defaults match the original fixed grid columns.
 export const RAIL_LEFT_DEFAULT = 264
@@ -36,14 +35,30 @@ export function setReadingWidth(w: ReadingWidth): void {
   document.documentElement.dataset.reading = w
 }
 
-// Default to "session": the rail opens focused on the current session, which is
-// what the user wants most of the time. Other sessions are one click away.
-export function getScope(): Scope {
-  return readStored(SCOPE_KEY) === "all" ? "all" : "session"
+// Open editor tabs (artifact ids, in open order) and the active tab — persisted
+// so reopening the companion restores the workspace, IDE-style. Ids that no
+// longer exist are pruned by App once the artifact list loads.
+export function getOpenTabs(): string[] {
+  const raw = readStored(TABS_KEY)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : []
+  } catch {
+    return []
+  }
 }
 
-export function setScope(s: Scope): void {
-  writeStored(SCOPE_KEY, s)
+export function setOpenTabs(ids: string[]): void {
+  writeStored(TABS_KEY, JSON.stringify(ids))
+}
+
+export function getActiveTab(): string | undefined {
+  return readStored(ACTIVE_TAB_KEY) || undefined
+}
+
+export function setActiveTab(id: string | undefined): void {
+  writeStored(ACTIVE_TAB_KEY, id ?? "")
 }
 
 function readWidth(key: string, fallback: number, clamp: (n: number) => number): number {

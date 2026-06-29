@@ -1,7 +1,7 @@
 import { test, expect, beforeEach } from "vitest"
 import {
   getReadingWidth, setReadingWidth,
-  getScope, setScope,
+  getOpenTabs, setOpenTabs, getActiveTab, setActiveTab,
   getRailLeft, setRailLeft, getRailRight, setRailRight,
   clampLeft, clampRight,
   RAIL_LEFT_DEFAULT, RAIL_RIGHT_DEFAULT,
@@ -20,12 +20,25 @@ test("reading width defaults to comfortable and round-trips, applying the datase
   expect(document.documentElement.dataset.reading).toBe("stretched")
 })
 
-test("scope defaults to session and round-trips through storage", () => {
-  expect(getScope()).toBe("session")
-  setScope("all")
-  expect(getScope()).toBe("all")
-  setScope("session")
-  expect(getScope()).toBe("session")
+test("open tabs default to empty and round-trip as a JSON array", () => {
+  expect(getOpenTabs()).toEqual([])
+  setOpenTabs(["a", "b", "c"])
+  expect(getOpenTabs()).toEqual(["a", "b", "c"])
+  setOpenTabs([])
+  expect(getOpenTabs()).toEqual([])
+})
+
+test("a corrupt open-tabs value degrades to empty", () => {
+  localStorage.setItem("oc-artifacts-open-tabs", "not json")
+  expect(getOpenTabs()).toEqual([])
+})
+
+test("active tab round-trips and clears to undefined", () => {
+  expect(getActiveTab()).toBeUndefined()
+  setActiveTab("a")
+  expect(getActiveTab()).toBe("a")
+  setActiveTab(undefined)
+  expect(getActiveTab()).toBeUndefined()
 })
 
 test("rail widths default to the original grid columns", () => {
