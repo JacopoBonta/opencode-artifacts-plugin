@@ -249,11 +249,9 @@ Components (`companion/src/components/`):
 ```
 src/             backend plugin (store, server, workflow, gate, tools, anchors)
 companion/       React review app (companion/dist is the prebuilt bundle)
-docs/            this document + design specs
+docs/            this document
 ```
 
-Design specs and the original implementation plans live under
-`docs/superpowers/specs/` and `docs/superpowers/plans/` — useful for the
-rationale behind individual features (anchored comments, comment auto-resolve,
-session grouping, locked approved plans, read-only reports, the revision
-switcher, and the companion restyle).
+Each module is unit-tested alongside its source (`*.test.ts` next to the file
+it covers), which is a good entry point for the behavior of any individual
+piece.

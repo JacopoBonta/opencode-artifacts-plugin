@@ -3,3 +3,5 @@ companion/node_modules/
 companion/dist/
 .opencode/artifacts/
 *.log
+.DS_Store
+docs/superpowers/
