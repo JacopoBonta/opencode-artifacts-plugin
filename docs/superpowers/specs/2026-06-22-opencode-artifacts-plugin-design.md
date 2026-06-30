@@ -7,8 +7,8 @@
 
 An opencode plugin that lets an agent generate **artifacts** (plans/specs and
 walkthroughs/reports) and lets the user **comment, request refinement, and
-approve** them through a browser-based companion GUI — bringing Google
-Antigravity's artifact-review experience to opencode.
+approve** them through a browser-based companion GUI — a rich artifact-review
+experience for opencode.
 
 opencode's TUI cannot render custom UI, so the review surface is a separate,
 auto-opened **browser companion** (React + Vite, prebuilt). The plugin is the

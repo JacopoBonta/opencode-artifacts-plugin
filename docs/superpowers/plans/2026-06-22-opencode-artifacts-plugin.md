@@ -2023,7 +2023,7 @@ git commit -m "test: end-to-end plan review happy path"
 
 Agent-generated artifacts (plans & reports) with browser-based review:
 inline anchored comments, approve / request-changes, and a blocking
-approval gate for plans — inspired by Google Antigravity.
+approval gate for plans.
 
 ## Install
 

@@ -1,14 +1,38 @@
 {
   "name": "opencode-artifacts-plugin",
   "version": "0.1.0",
+  "description": "Agent-generated artifacts (plans & reports) for opencode with browser-based review: inline anchored comments, approve / request-changes, and a blocking approval gate for plans.",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "artifacts",
+    "code-review",
+    "agent",
+    "plan"
+  ],
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JacopoBonta/opencode-artifacts-plugin.git"
+  },
+  "homepage": "https://github.com/JacopoBonta/opencode-artifacts-plugin#readme",
+  "bugs": "https://github.com/JacopoBonta/opencode-artifacts-plugin/issues",
   "type": "module",
   "main": "src/index.ts",
   "exports": { ".": "./src/index.ts" },
+  "files": [
+    "src/**/*.ts",
+    "!src/**/*.test.ts",
+    "companion/dist",
+    "README.md"
+  ],
+  "publishConfig": { "access": "public" },
   "scripts": {
     "test": "bun test src/*.test.ts",
     "test:companion": "cd companion && bun run test",
     "build:companion": "cd companion && bun install && bun run build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build:companion"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.17.9",
