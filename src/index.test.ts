@@ -42,6 +42,7 @@ test("plugin initializes, exposes tool + workflow hooks, and disposes", async ()
   expect(hooks.tool?.publish_artifact).toBeDefined()
   expect(hooks["tool.execute.before"]).toBeDefined()
   expect(hooks["chat.message"]).toBeDefined()
+  expect(hooks.event).toBeDefined()
   expect(hooks["experimental.chat.system.transform"]).toBeDefined()
   expect(hooks["experimental.session.compacting"]).toBeDefined()
   await hooks.dispose?.()
@@ -57,6 +58,23 @@ test("chat.message tracks the active session (idempotent, no throw on repeat/emp
   await onMessage({ sessionID: "s1" } as any, {} as any)
   await onMessage({ sessionID: "s2" } as any, {} as any)
   await onMessage({ sessionID: "" } as any, {} as any)
+  await hooks.dispose?.()
+})
+
+test("event hook handles reasoning parts and idle (and ignores others) without throwing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "proj-"))
+  const hooks = await init(dir)
+  const onEvent = hooks.event!
+  // A reasoning part drives the "Thinking…" status; session.idle clears it.
+  await onEvent({
+    event: { type: "message.part.updated", properties: { part: { type: "reasoning", sessionID: "s1" } } },
+  } as any)
+  await onEvent({ event: { type: "session.idle", properties: { sessionID: "s1" } } } as any)
+  // Unrelated events (a text part, an arbitrary event) are no-ops, not errors.
+  await onEvent({
+    event: { type: "message.part.updated", properties: { part: { type: "text", sessionID: "s1" } } },
+  } as any)
+  await onEvent({ event: { type: "message.updated", properties: { info: {} } } } as any)
   await hooks.dispose?.()
 })
 

@@ -13,6 +13,7 @@ import { ThemeToggle } from "./components/ThemeToggle"
 import { ReadingWidthToggle } from "./components/ReadingWidthToggle"
 import { ResizeHandle } from "./components/ResizeHandle"
 import { Toaster } from "./components/Toaster"
+import { StatusStrip } from "./components/StatusStrip"
 import { ShortcutHelp, ShortcutList } from "./components/ShortcutHelp"
 import { findAnchorOffsets } from "./anchor-dom"
 import { useToasts } from "./toasts"
@@ -38,6 +39,9 @@ export function App() {
   // The opencode session the user is currently in (pushed over SSE) — highlights
   // the tree and auto-opens that session's latest artifact.
   const [activeSessionID, setActiveSessionID] = useState<string>()
+  // Live "what the agent is doing now" phrase for the active session, pushed over
+  // SSE. undefined / idle hides the status strip.
+  const [agentStatus, setAgentStatus] = useState<{ state: "working" | "idle"; message: string }>()
   // Artifact ids with new/updated activity not yet opened — drives tree + tab dots.
   const [unseen, setUnseen] = useState<Set<string>>(new Set())
   // Tree collapse state (session keys, `rm:<id>`, archived) and the keyboard cursor.
@@ -66,9 +70,13 @@ export function App() {
   const openTabsRef = useRef<string[]>(openTabs)
   const activeTabIdRef = useRef<string | undefined>(activeTabId)
   const viewedRevisionRef = useRef<number | undefined>(viewedRevision)
+  // Active session mirrored into a ref so the once-subscribed SSE handler can
+  // tell whether an agent.status event is for the session in view.
+  const activeSessionIDRef = useRef<string | undefined>(activeSessionID)
   useEffect(() => { openTabsRef.current = openTabs }, [openTabs])
   useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
   useEffect(() => { viewedRevisionRef.current = viewedRevision }, [viewedRevision])
+  useEffect(() => { activeSessionIDRef.current = activeSessionID }, [activeSessionID])
   // Monotonic counters: a slow, stale response must not clobber a newer one.
   const detailSeq = useRef(0)
   const revSeq = useRef(0)
@@ -168,7 +176,16 @@ export function App() {
         setConnected(true)
         if (e.type === "ping") return
         if (e.type === "session.active") {
+          // A different session took focus — its agent status is unknown until
+          // the next event, so drop the stale strip.
+          if (e.sessionID !== activeSessionIDRef.current) setAgentStatus(undefined)
           setActiveSessionID(e.sessionID)
+          return
+        }
+        if (e.type === "agent.status") {
+          // Only reflect the session currently in view; ignore background sessions.
+          if (e.sessionID !== activeSessionIDRef.current) return
+          setAgentStatus({ state: e.state, message: e.message })
           return
         }
         refreshList()
@@ -459,35 +476,38 @@ export function App() {
         onCommit={(w) => setRailRight(w)}
       />
       <aside className="rail">
-        <div className="rail-header">
-          <h2>Explorer</h2>
-          <div className="rail-header-actions">
-            <button
-              type="button"
-              className="help-toggle"
-              aria-label="Keyboard shortcuts"
-              title="Keyboard shortcuts (?)"
-              onClick={() => setHelpOpen(true)}
-            >
-              ?
-            </button>
-            <ReadingWidthToggle />
-            <ThemeToggle />
+        <div className="rail-scroll">
+          <div className="rail-header">
+            <h2>Explorer</h2>
+            <div className="rail-header-actions">
+              <button
+                type="button"
+                className="help-toggle"
+                aria-label="Keyboard shortcuts"
+                title="Keyboard shortcuts (?)"
+                onClick={() => setHelpOpen(true)}
+              >
+                ?
+              </button>
+              <ReadingWidthToggle />
+              <ThemeToggle />
+            </div>
           </div>
+          <ArtifactTree
+            artifacts={artifacts}
+            focusedSessionID={focusedSessionID}
+            isLive={isLive}
+            activeId={activeTabId}
+            keyboardId={keyboardId}
+            collapsed={collapsed}
+            unseenIds={unseen}
+            onToggle={toggleCollapse}
+            onOpen={openTab}
+            onUnarchive={unarchive}
+            onDelete={remove}
+          />
         </div>
-        <ArtifactTree
-          artifacts={artifacts}
-          focusedSessionID={focusedSessionID}
-          isLive={isLive}
-          activeId={activeTabId}
-          keyboardId={keyboardId}
-          collapsed={collapsed}
-          unseenIds={unseen}
-          onToggle={toggleCollapse}
-          onOpen={openTab}
-          onUnarchive={unarchive}
-          onDelete={remove}
-        />
+        <StatusStrip status={agentStatus} />
       </aside>
       <main className="main">
         {openArtifacts.length > 0 && (
