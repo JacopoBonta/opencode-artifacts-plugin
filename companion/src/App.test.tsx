@@ -373,3 +373,35 @@ test("the explorer badges a plan-linked report as 'result' and a general report 
   expect(within(tree as HTMLElement).getByText("result")).toBeInTheDocument()
   expect(within(tree as HTMLElement).getByText("report")).toBeInTheDocument()
 })
+
+test("agent.status drives the rail status strip for the active session only", async () => {
+  render(<App />)
+  await focusSession("ses_a")
+
+  // A working status for the active session shows in the strip.
+  act(() => emit!({ type: "agent.status", sessionID: "ses_a", state: "working", message: "Running tests" }))
+  await waitFor(() => expect(screen.getByText("Running tests")).toBeInTheDocument())
+
+  // A status for a different (background) session is ignored.
+  act(() => emit!({ type: "agent.status", sessionID: "ses_b", state: "working", message: "Editing other.ts" }))
+  expect(screen.queryByText("Editing other.ts")).toBeNull()
+  expect(screen.getByText("Running tests")).toBeInTheDocument()
+
+  // Idle returns the strip to its (always-visible) Idle line.
+  act(() => emit!({ type: "agent.status", sessionID: "ses_a", state: "idle", message: "" }))
+  await waitFor(() => expect(screen.queryByText("Running tests")).toBeNull())
+  expect(screen.getByText("Idle")).toBeInTheDocument()
+})
+
+test("switching sessions drops a stale status strip", async () => {
+  render(<App />)
+  await focusSession("ses_a")
+  act(() => emit!({ type: "agent.status", sessionID: "ses_a", state: "working", message: "Editing a.ts" }))
+  await waitFor(() => expect(screen.getByText("Editing a.ts")).toBeInTheDocument())
+
+  // Focus moves to another session — the previous session's phrase must clear
+  // back to the Idle line until the new session reports its own status.
+  act(() => emit!({ type: "session.active", sessionID: "ses_b" }))
+  await waitFor(() => expect(screen.queryByText("Editing a.ts")).toBeNull())
+  expect(screen.getByText("Idle")).toBeInTheDocument()
+})
