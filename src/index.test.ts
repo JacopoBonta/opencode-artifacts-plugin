@@ -1,9 +1,51 @@
-import { test, expect } from "bun:test"
+import { test, expect, afterEach } from "bun:test"
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import ArtifactsPlugin from "./index"
+import ArtifactsPlugin, { resolveCompanionPort } from "./index"
 import type { Artifact } from "./types"
+
+// resolveCompanionPort reads process.env; restore it between cases.
+const ENV_KEY = "OPENCODE_ARTIFACTS_PORT"
+const savedEnv = process.env[ENV_KEY]
+afterEach(() => {
+  if (savedEnv === undefined) delete process.env[ENV_KEY]
+  else process.env[ENV_KEY] = savedEnv
+})
+
+test("resolveCompanionPort: config option wins (number and {env:}-substituted string)", () => {
+  delete process.env[ENV_KEY]
+  expect(resolveCompanionPort({ companionPort: 4799 })).toBe(4799)
+  expect(resolveCompanionPort({ companionPort: "4799" })).toBe(4799)
+})
+
+test("resolveCompanionPort: option takes precedence over the env var", () => {
+  process.env[ENV_KEY] = "5000"
+  expect(resolveCompanionPort({ companionPort: "4799" })).toBe(4799)
+})
+
+test("resolveCompanionPort: falls back to the env var when no option", () => {
+  process.env[ENV_KEY] = "5000"
+  expect(resolveCompanionPort({})).toBe(5000)
+  expect(resolveCompanionPort(undefined)).toBe(5000)
+})
+
+test("resolveCompanionPort: empty/invalid/out-of-range values fall through to 0", () => {
+  delete process.env[ENV_KEY]
+  // {env:UNSET} substitutes to "" — must not pin port "0" or NaN
+  expect(resolveCompanionPort({ companionPort: "" })).toBe(0)
+  expect(resolveCompanionPort({ companionPort: "0" })).toBe(0)
+  expect(resolveCompanionPort({ companionPort: "nope" })).toBe(0)
+  expect(resolveCompanionPort({ companionPort: 70000 })).toBe(0)
+  expect(resolveCompanionPort({ companionPort: 3.5 })).toBe(0)
+  expect(resolveCompanionPort({})).toBe(0)
+  expect(resolveCompanionPort(undefined)).toBe(0)
+})
+
+test("resolveCompanionPort: empty option falls through to a valid env var", () => {
+  process.env[ENV_KEY] = "5000"
+  expect(resolveCompanionPort({ companionPort: "" })).toBe(5000)
+})
 
 const fakeClient = {
   tui: { showToast: async () => {} },
