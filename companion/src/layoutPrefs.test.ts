@@ -2,6 +2,7 @@ import { test, expect, beforeEach } from "vitest"
 import {
   getReadingWidth, setReadingWidth,
   getOpenTabs, setOpenTabs, getActiveTab, setActiveTab,
+  getCollapsed, setCollapsed,
   getRailLeft, setRailLeft, getRailRight, setRailRight,
   clampLeft, clampRight,
   RAIL_LEFT_DEFAULT, RAIL_RIGHT_DEFAULT,
@@ -39,6 +40,19 @@ test("active tab round-trips and clears to undefined", () => {
   expect(getActiveTab()).toBe("a")
   setActiveTab(undefined)
   expect(getActiveTab()).toBeUndefined()
+})
+
+test("collapse state defaults to empty and round-trips as a JSON map", () => {
+  expect(getCollapsed()).toEqual({})
+  setCollapsed({ "ses:a": true, "rm:1": false })
+  expect(getCollapsed()).toEqual({ "ses:a": true, "rm:1": false })
+})
+
+test("a corrupt or non-object collapse value degrades to empty", () => {
+  localStorage.setItem("oc-artifacts-collapsed", "not json")
+  expect(getCollapsed()).toEqual({})
+  localStorage.setItem("oc-artifacts-collapsed", "[1,2]")
+  expect(getCollapsed()).toEqual({})
 })
 
 test("rail widths default to the original grid columns", () => {

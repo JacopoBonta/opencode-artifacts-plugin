@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import React, { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from "react"
 import "./App.css"
 import * as api from "./api"
 import type { Anchor, Artifact, ArtifactDetail } from "./api"
@@ -12,11 +12,16 @@ import { RevisionSwitcher } from "./components/RevisionSwitcher"
 import { ThemeToggle } from "./components/ThemeToggle"
 import { ReadingWidthToggle } from "./components/ReadingWidthToggle"
 import { ResizeHandle } from "./components/ResizeHandle"
+import { Toaster } from "./components/Toaster"
+import { ShortcutHelp, ShortcutList } from "./components/ShortcutHelp"
+import { findAnchorOffsets } from "./anchor-dom"
+import { useToasts } from "./toasts"
 import { useShortcuts } from "./shortcuts"
 import {
   getRailLeft, getRailRight, setRailLeft, setRailRight, clampLeft, clampRight,
   getOpenTabs, setOpenTabs as persistOpenTabs,
   getActiveTab, setActiveTab as persistActiveTab,
+  getCollapsed, setCollapsed as persistCollapsed,
 } from "./layoutPrefs"
 
 export function App() {
@@ -36,51 +41,60 @@ export function App() {
   // Artifact ids with new/updated activity not yet opened — drives tree + tab dots.
   const [unseen, setUnseen] = useState<Set<string>>(new Set())
   // Tree collapse state (session keys, `rm:<id>`, archived) and the keyboard cursor.
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(getCollapsed)
   const [treeIndex, setTreeIndex] = useState(0)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [submittingVerdict, setSubmittingVerdict] = useState(false)
   // undefined = viewing the latest revision
   const [viewedRevision, setViewedRevision] = useState<number>()
   const [historicalContent, setHistoricalContent] = useState<string>()
+  // Set when a new revision arrives while the reader is pinned to an older one,
+  // so we can nudge instead of yanking them to latest.
+  const [newerRevision, setNewerRevision] = useState(false)
   const flashSeq = useRef(0)
   const [flashComment, setFlashComment] = useState<{ id: string; key: number }>()
   const [flashAnchor, setFlashAnchor] = useState<{ id: string; key: number }>()
   const onHighlightClick = useCallback((id: string) => setFlashComment({ id, key: ++flashSeq.current }), [])
   const onCommentClick = useCallback((id: string) => setFlashAnchor({ id, key: ++flashSeq.current }), [])
 
-  // A transient fetch-error message (distinct from `connected`, which tracks the
-  // SSE stream). Cleared by the next successful list/detail refresh.
-  const [error, setError] = useState<string>()
+  // Transient success/error notifications (distinct from `connected`, which
+  // tracks the persistent SSE-stream banner).
+  const { toasts, push, dismiss } = useToasts()
   // Tab state mirrored into refs so the once-subscribed SSE handler and the
   // close-tab callback can read it without re-subscribing.
   const openTabsRef = useRef<string[]>(openTabs)
   const activeTabIdRef = useRef<string | undefined>(activeTabId)
+  const viewedRevisionRef = useRef<number | undefined>(viewedRevision)
   useEffect(() => { openTabsRef.current = openTabs }, [openTabs])
   useEffect(() => { activeTabIdRef.current = activeTabId }, [activeTabId])
+  useEffect(() => { viewedRevisionRef.current = viewedRevision }, [viewedRevision])
   // Monotonic counters: a slow, stale response must not clobber a newer one.
   const detailSeq = useRef(0)
   const revSeq = useRef(0)
+  // Editor scroll preservation: remember scrollTop per artifact+revision so an
+  // in-place content refresh (e.g. a new comment over SSE) doesn't jump to top.
+  const editorRef = useRef<HTMLDivElement>(null)
+  const scrollPos = useRef<Map<string, number>>(new Map())
 
   const refreshList = useCallback(async () => {
     try {
       setArtifacts(await api.listArtifacts())
-      setError(undefined)
     } catch {
-      setError("Couldn't reach the companion server.")
+      push("error", "Couldn't reach the companion server.", { label: "Retry", onClick: () => { refreshList() } })
     }
-  }, [])
+  }, [push])
   const refreshDetail = useCallback(async (id: string) => {
     const seq = ++detailSeq.current
     try {
       const d = await api.getArtifact(id)
       if (seq !== detailSeq.current) return // a newer refresh superseded this one
       setDetail(d)
-      setError(undefined)
     } catch {
-      if (seq === detailSeq.current) setError("Couldn't load the selected artifact.")
+      if (seq === detailSeq.current)
+        push("error", "Couldn't load the selected artifact.", { label: "Retry", onClick: () => { refreshDetail(id) } })
     }
-  }, [])
+  }, [push])
 
   // Activate an open tab: focus it and clear its activity dot.
   const activate = useCallback((id: string) => {
@@ -120,6 +134,7 @@ export function App() {
   // Persist tabs so the workspace is restored on reload.
   useEffect(() => { persistOpenTabs(openTabs) }, [openTabs])
   useEffect(() => { persistActiveTab(activeTabId) }, [activeTabId])
+  useEffect(() => { persistCollapsed(collapsed) }, [collapsed])
 
   // Prune tabs for artifacts that no longer exist once the list loads/changes.
   useEffect(() => {
@@ -143,6 +158,7 @@ export function App() {
     if (!activeTabId) { setDetail(undefined); return }
     setViewedRevision(undefined)
     setHistoricalContent(undefined)
+    setNewerRevision(false)
     refreshDetail(activeTabId)
   }, [activeTabId, refreshDetail])
 
@@ -167,10 +183,16 @@ export function App() {
           return
         }
         if (e.id === activeTabIdRef.current) {
-          // A new revision may have arrived — return to the latest view.
-          setViewedRevision(undefined)
-          setHistoricalContent(undefined)
-          refreshDetail(e.id)
+          if (viewedRevisionRef.current !== undefined) {
+            // The reader is pinned to an older revision — keep them there and
+            // surface a nudge instead of yanking the view to latest.
+            setNewerRevision(true)
+            refreshDetail(e.id)
+          } else {
+            // A new revision may have arrived — return to the latest view.
+            setHistoricalContent(undefined)
+            refreshDetail(e.id)
+          }
           return
         }
         // New/updated activity on an artifact that isn't the active tab — flag it.
@@ -247,24 +269,27 @@ export function App() {
   async function archive(id: string) {
     try {
       await api.setArchived(id, true)
+      push("success", "Artifact archived.")
     } catch {
-      setError("Couldn't archive the artifact.")
+      push("error", "Couldn't archive the artifact.")
     }
     refreshList()
   }
   async function unarchive(id: string) {
     try {
       await api.setArchived(id, false)
+      push("success", "Artifact unarchived.")
     } catch {
-      setError("Couldn't unarchive the artifact.")
+      push("error", "Couldn't unarchive the artifact.")
     }
     refreshList()
   }
   async function remove(id: string) {
     try {
       await api.deleteArtifact(id)
+      push("success", "Artifact deleted.")
     } catch {
-      setError("Couldn't delete the artifact.")
+      push("error", "Couldn't delete the artifact.")
     }
     refreshList()
   }
@@ -274,23 +299,22 @@ export function App() {
     if (n >= detail.artifact.currentRevision) {
       setViewedRevision(undefined)
       setHistoricalContent(undefined)
+      setNewerRevision(false)
       return
     }
     setViewedRevision(n)
     const seq = ++revSeq.current
     try {
       const { content } = await api.getRevision(detail.artifact.id, n)
-      if (seq === revSeq.current) {
-        setHistoricalContent(content)
-        setError(undefined)
-      }
+      if (seq === revSeq.current) setHistoricalContent(content)
     } catch {
-      if (seq === revSeq.current) setError(`Couldn't load revision ${n}.`)
+      if (seq === revSeq.current)
+        push("error", `Couldn't load revision ${n}.`, { label: "Retry", onClick: () => { pickRevision(n) } })
     }
-  }, [detail])
+  }, [detail, push])
 
-  async function addComment(body: string, anchor?: Anchor) {
-    if (!detail) return
+  async function addComment(body: string, anchor?: Anchor): Promise<boolean> {
+    if (!detail) return false
     try {
       await api.postComment(detail.artifact.id, {
         revision: detail.artifact.currentRevision,
@@ -300,8 +324,12 @@ export function App() {
       })
       setPendingAnchor(undefined)
       refreshDetail(detail.artifact.id)
+      push("success", "Comment posted.")
+      return true
     } catch {
-      setError("Couldn't post the comment.")
+      // Return false so the thread keeps the user's draft instead of clearing it.
+      push("error", "Couldn't post the comment.")
+      return false
     }
   }
 
@@ -310,8 +338,9 @@ export function App() {
     try {
       await api.patchComment(detail.artifact.id, commentId, body)
       refreshDetail(detail.artifact.id)
+      push("success", "Comment updated.")
     } catch {
-      setError("Couldn't update the comment.")
+      push("error", "Couldn't update the comment.")
     }
   }
 
@@ -320,8 +349,9 @@ export function App() {
     try {
       await api.deleteComment(detail.artifact.id, commentId)
       refreshDetail(detail.artifact.id)
+      push("success", "Comment deleted.")
     } catch {
-      setError("Couldn't delete the comment.")
+      push("error", "Couldn't delete the comment.")
     }
   }
 
@@ -334,8 +364,16 @@ export function App() {
     try {
       await api.postVerdict(detail.artifact.id, status, reason)
       await refreshDetail(detail.artifact.id)
+      push(
+        "success",
+        status === "approved"
+          ? "Plan approved."
+          : status === "declined"
+            ? "Plan declined — the agent was stopped."
+            : "Changes requested.",
+      )
     } catch {
-      setError("Couldn't submit the verdict.")
+      push("error", "Couldn't submit the verdict.")
     } finally {
       setSubmittingVerdict(false)
     }
@@ -356,16 +394,37 @@ export function App() {
   const revisionComments = detail
     ? (isLatest ? detail.comments : detail.comments.filter((c) => c.revision === viewing))
     : []
+  // Content currently on screen, and the anchor comments whose quote no longer
+  // matches it — surfaced in the thread instead of silently dropping them.
+  const displayedContent = detail ? (isLatest ? detail.content : historicalContent ?? "") : ""
+  // Restore the remembered scroll position after the content re-renders for the
+  // same artifact+revision; a different key (new artifact/revision) starts at top.
+  const scrollKey = `${activeTabId ?? ""}:${viewing}`
+  useLayoutEffect(() => {
+    const el = editorRef.current
+    if (el) el.scrollTop = scrollPos.current.get(scrollKey) ?? 0
+  }, [displayedContent, scrollKey])
+  const orphanedIds = useMemo(() => {
+    const out = new Set<string>()
+    for (const c of revisionComments) {
+      if (c.kind === "anchor" && c.anchor && !findAnchorOffsets(displayedContent, c.anchor)) out.add(c.id)
+    }
+    return out
+  }, [displayedContent, revisionComments])
 
   // Keyboard layer. Config is re-read from a ref each keypress, so these closures
   // always see fresh state.
   useShortcuts({
-    paletteOpen,
+    // The palette and help overlay both own the keyboard while open (only
+    // Cmd/Ctrl-K + Esc pass through).
+    paletteOpen: paletteOpen || helpOpen,
     onPaletteToggle: () => setPaletteOpen((o) => !o),
     onEscape: () => {
       if (paletteOpen) setPaletteOpen(false)
+      else if (helpOpen) setHelpOpen(false)
       else if (pendingAnchor) setPendingAnchor(undefined)
     },
+    onHelp: () => setHelpOpen((o) => !o),
     onTreeDown: () => setTreeIndex((i) => Math.min(i + 1, Math.max(visibleIds.length - 1, 0))),
     onTreeUp: () => setTreeIndex((i) => Math.max(i - 1, 0)),
     onOpenSelected: () => { if (keyboardId) openTab(keyboardId) },
@@ -386,9 +445,7 @@ export function App() {
       {!connected && (
         <div className="conn-lost">Connection lost — reconnecting…</div>
       )}
-      {error && (
-        <div className="conn-lost error-banner" role="alert">{error}</div>
-      )}
+      <Toaster toasts={toasts} onDismiss={dismiss} />
       <ResizeHandle
         side="left"
         width={railLeft}
@@ -405,6 +462,15 @@ export function App() {
         <div className="rail-header">
           <h2>Explorer</h2>
           <div className="rail-header-actions">
+            <button
+              type="button"
+              className="help-toggle"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts (?)"
+              onClick={() => setHelpOpen(true)}
+            >
+              ?
+            </button>
             <ReadingWidthToggle />
             <ThemeToggle />
           </div>
@@ -434,7 +500,11 @@ export function App() {
           />
         )}
         {detail ? (
-          <div className="editor">
+          <div
+            className="editor"
+            ref={editorRef}
+            onScroll={(e) => scrollPos.current.set(scrollKey, e.currentTarget.scrollTop)}
+          >
             <header className="main-header">
               <div className="main-header-left">
                 <h1>{detail.artifact.title}</h1>
@@ -461,7 +531,10 @@ export function App() {
             </header>
             {!isLatest && (
               <div className="historical-banner">
-                <span>Revision {viewing} of {total} (historical)</span>
+                <span>
+                  Revision {viewing} of {total} (historical)
+                  {newerRevision && " — a newer revision was just published"}
+                </span>
                 <button type="button" onClick={() => pickRevision(total)}>Back to latest</button>
               </div>
             )}
@@ -480,7 +553,8 @@ export function App() {
               content={isLatest ? detail.content : historicalContent ?? ""}
               comments={revisionComments}
               highlightResolved={!isLatest}
-              onAnchor={canComment ? setPendingAnchor : () => {}}
+              canComment={canComment}
+              onAnchor={setPendingAnchor}
               onHighlightClick={onHighlightClick}
               flashAnchorId={flashAnchor?.id}
               flashKey={flashAnchor?.key}
@@ -492,12 +566,7 @@ export function App() {
           <div className="empty-cheatsheet">
             <h2>No artifact open</h2>
             <p>Open one from the explorer, or jump to any with the command palette.</p>
-            <ul className="shortcut-list">
-              <li><kbd>⌘</kbd><kbd>K</kbd><span>go to artifact</span></li>
-              <li><kbd>j</kbd><kbd>k</kbd><span>move in the tree · <kbd>↵</kbd> open</span></li>
-              <li><kbd>[</kbd><kbd>]</kbd><span>switch tabs · <kbd>w</kbd> close</span></li>
-              <li><kbd>a</kbd><span>approve · <kbd>c</kbd> comment</span></li>
-            </ul>
+            <ShortcutList />
           </div>
         )}
       </main>
@@ -506,6 +575,12 @@ export function App() {
           <>
             {canComment ? (
               <>
+                {!pendingAnchor && (
+                  <p className="comment-hint">
+                    Select text in the document to comment on a specific part, or write a general
+                    comment below.
+                  </p>
+                )}
                 {pendingAnchor && (
                   <div className="pending-anchor">
                     <div className="pending-anchor-head">
@@ -526,6 +601,7 @@ export function App() {
                 <CommentThread
                   title="Comments"
                   comments={detail.comments}
+                  orphanedIds={orphanedIds}
                   onAdd={(body) => addComment(body, pendingAnchor)}
                   onEdit={editComment}
                   onDelete={deleteComment}
@@ -558,6 +634,7 @@ export function App() {
               <CommentThread
                 title={isLatest ? "Comments" : `Comments · revision ${viewing}`}
                 comments={revisionComments}
+                orphanedIds={orphanedIds}
                 onAdd={() => {}}
                 readOnly
                 onCommentClick={onCommentClick}
@@ -575,6 +652,7 @@ export function App() {
           onClose={() => setPaletteOpen(false)}
         />
       )}
+      {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
     </div>
   )
 }

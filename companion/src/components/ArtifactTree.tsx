@@ -143,6 +143,7 @@ export function ArtifactTree(props: {
     if (node.children.length === 0) {
       return (
         <li key={a.id} className={`tree-leaf${rowClass(a.id)}`} onClick={() => props.onOpen(a.id)}>
+          <span className="node-chevron-spacer" aria-hidden="true" />
           <span className={`badge badge-${badge}`}>{badge}</span>
           <span className="title">{a.title}</span>
           {unseen.has(a.id) && <span className="activity-dot" title="New activity" />}

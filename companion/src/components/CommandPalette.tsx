@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import type { Artifact } from "../api"
 
 function sessionLabel(a: Artifact): string {
@@ -28,6 +28,12 @@ export function CommandPalette(props: {
 }) {
   const [query, setQuery] = useState("")
   const [index, setIndex] = useState(0)
+
+  // Return focus to whatever was focused before the palette opened.
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null
+    return () => prev?.focus?.()
+  }, [])
 
   const entries = useMemo<Entry[]>(
     () =>
@@ -65,20 +71,28 @@ export function CommandPalette(props: {
     else if (e.key === "ArrowUp") { e.preventDefault(); setIndex((sel - 1 + results.length) % Math.max(results.length, 1)) }
     else if (e.key === "Enter") { e.preventDefault(); choose(sel) }
     else if (e.key === "Escape") { e.preventDefault(); props.onClose() }
+    // Trap focus: the input is the only focusable control, so keep Tab here.
+    else if (e.key === "Tab") { e.preventDefault() }
   }
+
+  const activeRowId = results.length ? `palette-row-${sel}` : undefined
 
   return (
     <div className="palette-overlay" onMouseDown={props.onClose}>
-      <div className="palette" role="dialog" aria-label="Go to artifact" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="palette" role="dialog" aria-modal="true" aria-label="Go to artifact" onMouseDown={(e) => e.stopPropagation()}>
         <input
           className="palette-input"
           autoFocus
           placeholder="Go to artifact…"
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="palette-results"
+          aria-activedescendant={activeRowId}
           value={query}
           onChange={(e) => { setQuery(e.target.value); setIndex(0) }}
           onKeyDown={onKeyDown}
         />
-        <ul className="palette-results">
+        <ul className="palette-results" id="palette-results" role="listbox">
           {results.length === 0 && <li className="palette-empty">No matches</li>}
           {results.map((e, i) => (
             <React.Fragment key={e.id}>
@@ -86,6 +100,9 @@ export function CommandPalette(props: {
                 <li className="palette-section" aria-hidden="true">Archived</li>
               )}
               <li
+                id={`palette-row-${i}`}
+                role="option"
+                aria-selected={i === sel}
                 className={`palette-row${i === sel ? " sel" : ""}${e.archived ? " archived" : ""}`}
                 onMouseEnter={() => setIndex(i)}
                 onClick={() => choose(i)}

@@ -13,6 +13,7 @@ export interface ShortcutConfig {
   onCloseTab?: () => void
   onApprove?: () => void
   onComment?: () => void
+  onHelp?: () => void
 }
 
 // Single-key shortcuts must not fire while the user is typing or has an
@@ -60,6 +61,7 @@ export function useShortcuts(config: ShortcutConfig): void {
         case "w": c.onCloseTab?.(); break
         case "a": c.onApprove?.(); break
         case "c": c.onComment?.(); break
+        case "?": c.onHelp?.(); break
         default: return
       }
       e.preventDefault()

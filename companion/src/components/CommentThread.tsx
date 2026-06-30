@@ -4,21 +4,26 @@ import { flashElement } from "../flash"
 
 function CommentItem({
   c,
+  orphaned,
   onClick,
   onEdit,
   onDelete,
 }: {
   c: Comment
+  orphaned?: boolean
   onClick?: (id: string) => void
   onEdit?: (id: string, body: string) => void
   onDelete?: (id: string) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(c.body)
+  // Deleting is destructive and irreversible, so it's a two-step inline confirm
+  // (mirrors the decline flow in ActionBar) rather than an instant delete.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   // Edit/Delete are offered only for active comments (the parent passes the
   // callbacks only there); a clickable anchor stops being clickable while edited.
   const editable = !!onEdit || !!onDelete
-  const clickable = c.kind === "anchor" && !!onClick && !editing
+  const clickable = c.kind === "anchor" && !!onClick && !editing && !confirmingDelete
 
   function save() {
     const trimmed = draft.trim()
@@ -33,6 +38,11 @@ function CommentItem({
       onClick={clickable ? () => onClick!(c.id) : undefined}
     >
       {c.anchor?.quote && <blockquote>{c.anchor.quote}</blockquote>}
+      {orphaned && (
+        <span className="comment-orphan" title="The quoted text changed in this revision, so this comment is no longer anchored.">
+          ⚓ anchor not in this revision
+        </span>
+      )}
       {editing ? (
         <div className="comment-edit">
           <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} />
@@ -46,7 +56,7 @@ function CommentItem({
           <p>{c.body}</p>
           {editable && (
             <div className="comment-actions">
-              {onEdit && (
+              {onEdit && !confirmingDelete && (
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setDraft(c.body); setEditing(true) }}
@@ -54,13 +64,30 @@ function CommentItem({
                   Edit
                 </button>
               )}
-              {onDelete && (
+              {onDelete && !confirmingDelete && (
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); onDelete(c.id) }}
+                  onClick={(e) => { e.stopPropagation(); setConfirmingDelete(true) }}
                 >
                   Delete
                 </button>
+              )}
+              {onDelete && confirmingDelete && (
+                <>
+                  <button
+                    type="button"
+                    className="comment-delete-confirm"
+                    onClick={(e) => { e.stopPropagation(); onDelete(c.id) }}
+                  >
+                    Confirm delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setConfirmingDelete(false) }}
+                  >
+                    Cancel
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -72,17 +99,21 @@ function CommentItem({
 
 export function CommentThread(props: {
   comments: Comment[]
-  onAdd: (body: string) => void
+  /** Returns false when the post failed, so the draft is kept; true/void clears it. */
+  onAdd: (body: string) => Promise<boolean> | boolean | void
   onEdit?: (id: string, body: string) => void
   onDelete?: (id: string) => void
   title?: string
   readOnly?: boolean
+  /** ids of anchor comments whose quote no longer matches the shown revision */
+  orphanedIds?: Set<string>
   onCommentClick?: (id: string) => void
   flashCommentId?: string
   flashKey?: number
 }) {
   const [draft, setDraft] = useState("")
   const [showResolved, setShowResolved] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -93,13 +124,31 @@ export function CommentThread(props: {
     flashElement(el)
   }, [props.flashCommentId, props.flashKey])
 
-  const item = (c: Comment) => <CommentItem key={c.id} c={c} onClick={props.onCommentClick} />
+  async function submit() {
+    const trimmed = draft.trim()
+    if (!trimmed || submitting) return
+    setSubmitting(true)
+    try {
+      // Clear the draft only once the post succeeds — a failed post must not
+      // silently destroy what the user typed.
+      const ok = await props.onAdd(trimmed)
+      if (ok !== false) setDraft("")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const orphaned = (c: Comment) => props.orphanedIds?.has(c.id)
+  const item = (c: Comment) => (
+    <CommentItem key={c.id} c={c} orphaned={orphaned(c)} onClick={props.onCommentClick} />
+  )
   // Active comments in an editable thread get Edit/Delete; resolved and
   // read-only comments stay immutable (no callbacks passed).
   const editableItem = (c: Comment) => (
     <CommentItem
       key={c.id}
       c={c}
+      orphaned={orphaned(c)}
       onClick={props.onCommentClick}
       onEdit={props.onEdit}
       onDelete={props.onDelete}
@@ -138,10 +187,8 @@ export function CommentThread(props: {
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Add a comment"
         />
-        <button
-          onClick={() => { if (draft.trim()) { props.onAdd(draft.trim()); setDraft("") } }}
-        >
-          Comment
+        <button onClick={submit} disabled={submitting || !draft.trim()}>
+          {submitting ? "Posting…" : "Comment"}
         </button>
       </>
     )

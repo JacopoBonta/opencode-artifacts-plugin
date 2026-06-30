@@ -1,24 +1,28 @@
 import React, { useState } from "react"
-import { getTheme, setTheme, type Theme } from "../theme"
+import { getThemeChoice, setThemeChoice, type ThemeChoice } from "../theme"
+
+const ORDER: ThemeChoice[] = ["system", "light", "dark"]
+const ICON: Record<ThemeChoice, string> = { system: "🖥", light: "☀", dark: "☾" }
+const LABEL: Record<ThemeChoice, string> = { system: "System", light: "Light", dark: "Dark" }
 
 export function ThemeToggle() {
-  const [theme, setLocal] = useState<Theme>(getTheme())
+  const [choice, setChoice] = useState<ThemeChoice>(getThemeChoice())
 
-  function toggle() {
-    const next: Theme = theme === "dark" ? "light" : "dark"
-    setTheme(next)
-    setLocal(next)
+  function cycle() {
+    const next = ORDER[(ORDER.indexOf(choice) + 1) % ORDER.length]
+    setThemeChoice(next)
+    setChoice(next)
   }
 
   return (
     <button
       type="button"
       className="theme-toggle"
-      aria-label="Toggle theme"
-      title="Toggle light / dark theme"
-      onClick={toggle}
+      aria-label={`Theme: ${LABEL[choice]}`}
+      title={`Theme: ${LABEL[choice]} — click to change`}
+      onClick={cycle}
     >
-      {theme === "dark" ? "☀" : "☾"}
+      {ICON[choice]}
     </button>
   )
 }

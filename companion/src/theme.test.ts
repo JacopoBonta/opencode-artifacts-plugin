@@ -1,29 +1,47 @@
-import { test, expect, beforeEach } from "vitest"
-import { getTheme, setTheme, initTheme } from "./theme"
+import { test, expect, beforeEach, afterEach, vi } from "vitest"
+import { getThemeChoice, setThemeChoice, resolveTheme, initTheme } from "./theme"
 
 beforeEach(() => {
   localStorage.clear()
   document.documentElement.removeAttribute("data-theme")
 })
+afterEach(() => vi.unstubAllGlobals())
 
-test("defaults to dark with no stored value", () => {
-  expect(getTheme()).toBe("dark")
+/** Stub window.matchMedia so "(prefers-color-scheme: dark)" reports `dark`. */
+function stubSystemDark(dark: boolean) {
+  vi.stubGlobal("matchMedia", (q: string) => ({
+    matches: dark && q.includes("dark"),
+    media: q,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }))
+}
+
+test("defaults to system with no stored value", () => {
+  expect(getThemeChoice()).toBe("system")
 })
 
-test("setTheme persists to localStorage and applies to documentElement", () => {
-  setTheme("light")
+test("setThemeChoice persists the choice and applies the resolved theme", () => {
+  setThemeChoice("light")
   expect(localStorage.getItem("oc-artifacts-theme")).toBe("light")
   expect(document.documentElement.dataset.theme).toBe("light")
-  expect(getTheme()).toBe("light")
+  expect(getThemeChoice()).toBe("light")
 })
 
-test("initTheme applies the stored value", () => {
-  localStorage.setItem("oc-artifacts-theme", "light")
-  initTheme()
-  expect(document.documentElement.dataset.theme).toBe("light")
+test("system resolves via prefers-color-scheme", () => {
+  stubSystemDark(true)
+  expect(resolveTheme("system")).toBe("dark")
+  stubSystemDark(false)
+  expect(resolveTheme("system")).toBe("light")
 })
 
-test("initTheme applies dark when nothing is stored", () => {
+test("system choice applies the OS theme on init", () => {
+  stubSystemDark(true)
   initTheme()
   expect(document.documentElement.dataset.theme).toBe("dark")
+})
+
+test("resolveTheme falls back to light when matchMedia is unavailable", () => {
+  // jsdom has no matchMedia by default; resolveTheme must not throw.
+  expect(resolveTheme("system")).toBe("light")
 })

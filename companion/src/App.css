@@ -101,8 +101,13 @@ button { font-family: inherit; }
 .rail-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .rail-header-actions { display: flex; align-items: center; gap: 6px; }
 .rail-header h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
-.theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px; line-height: 1; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
-.theme-toggle:hover { border-color: var(--accent); }
+.theme-toggle, .help-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px; line-height: 1; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.theme-toggle:hover, .help-toggle:hover { border-color: var(--accent); }
+.help-toggle { font-weight: 700; color: var(--text-muted); }
+
+/* keyboard-shortcut help overlay */
+.shortcut-help { width: min(420px, 90vw); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 22px; }
+.shortcut-help h2 { margin: 0 0 14px; font-size: 15px; font-weight: 650; }
 
 /* artifact list */
 .artifact-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -141,7 +146,19 @@ button { font-family: inherit; }
 .declined-reason { font-weight: 500; }
 .draft-banner { margin-top: auto; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--info-bg); color: var(--info-fg); font-size: 12.5px; }
 .conn-lost { grid-column: 1 / -1; padding: 8px 16px; background: var(--warn-bg); color: var(--warn-fg); border-bottom: 1px solid var(--border); font-size: 12.5px; }
-.error-banner { background: transparent; color: var(--status-changes_requested); font-weight: 500; }
+
+/* toasts */
+.toaster { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(380px, 90vw); }
+.toast { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-size: 13px; animation: toast-in 0.18s ease-out; }
+.toast-success { border-color: color-mix(in srgb, var(--success-fg) 45%, var(--border)); }
+.toast-error { border-color: color-mix(in srgb, var(--status-declined) 45%, var(--border)); }
+.toast-msg { flex: 1; min-width: 0; }
+.toast-action { flex: none; padding: 3px 8px; font-size: 12px; font-weight: 600; color: var(--accent); background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
+.toast-action:hover { border-color: var(--accent); }
+.toast-close { flex: none; background: none; border: none; color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
+.toast-close:hover { color: var(--text); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
 /* reading width: comfortable (default) centers the editor column; stretched fills it */
 .editor > * { max-width: 820px; margin-inline: auto; }
@@ -168,6 +185,8 @@ button { font-family: inherit; }
 .artifact-view li.task-list-item { list-style: none; }
 .artifact-view li.task-list-item input { margin-right: 0.5em; }
 mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-radius: 3px; padding: 0 1px; cursor: pointer; }
+.comment-floating { z-index: 40; transform: translateX(-50%); padding: 6px 10px; font-size: 12.5px; font-weight: 600; color: var(--accent-fg); background: var(--accent); border: none; border-radius: var(--radius-sm); box-shadow: var(--shadow); cursor: pointer; }
+.comment-floating:hover { background: var(--accent-hover); }
 
 /* comments */
 .comment-thread { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
@@ -178,13 +197,17 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .comment.clickable { cursor: pointer; transition: border-color 0.15s; }
 .comment.clickable:hover { border-color: var(--accent); }
 .comment.resolved { opacity: 0.55; }
+.comment-orphan { display: inline-block; margin-bottom: 6px; font-size: 11px; font-weight: 600; color: var(--warn-fg); background: var(--warn-bg); border-radius: 999px; padding: 1px 8px; cursor: help; }
 .comment-actions { display: flex; gap: 6px; margin-top: 8px; }
+.comment-actions button.comment-delete-confirm { color: var(--status-declined); border-color: var(--status-declined); }
+.comment-actions button.comment-delete-confirm:hover { background: var(--danger-bg); }
 .comment-actions button { padding: 3px 8px; font-size: 12px; line-height: 1.4; color: var(--text-muted); background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; }
 .comment-actions button:hover { border-color: var(--accent); color: var(--text); }
 .comment-thread .comment-edit textarea { width: 100%; min-height: 56px; margin: 0; padding: 8px 10px; font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: vertical; }
 .comment-thread .comment-edit textarea:focus { outline: none; border-color: var(--accent); }
 .resolved-section { margin: 4px 0 10px; }
 .resolved-toggle { background: none; border: none; padding: 4px 0; color: var(--text-muted); font-size: 12px; cursor: pointer; }
+.comment-hint { margin: 0 0 10px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 .pending-anchor { background: var(--info-bg); color: var(--info-fg); padding: 8px 10px; border-radius: var(--radius-sm); margin-bottom: 10px; font-size: 12.5px; }
 .pending-anchor blockquote { margin: 4px 0 0; padding-left: 8px; border-left: 3px solid currentColor; }
 .pending-anchor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -231,7 +254,7 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .artifact-tree .artifact-list li.tree-leaf { flex-direction: row; align-items: center; gap: 8px; padding: 4px 8px; }
 .artifact-tree .artifact-list li.tree-leaf .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artifact-tree .artifact-list li.tree-leaf .badge { align-self: center; }
-.artifact-tree .roadmap-row { flex-wrap: nowrap; padding: 4px 8px; }
+.artifact-tree .roadmap-row { flex-wrap: nowrap; gap: 8px; padding: 4px 8px; }
 .artifact-list li.active, .roadmap-row.active, .archived-row.active { background: var(--surface-2); border-color: var(--border); box-shadow: inset 3px 0 0 var(--accent); }
 .artifact-list li.active .title, .roadmap-row.active .title { color: var(--accent); }
 .artifact-list li.kbd, .roadmap-row.kbd, .archived-row.kbd { outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -1px; }
@@ -255,7 +278,9 @@ mark.anchor-highlight { background: var(--highlight-bg); color: inherit; border-
 .roadmap-row:hover { background: var(--surface-2); }
 .roadmap-row.selected { background: var(--surface-2); border-color: var(--border); box-shadow: inset 3px 0 0 var(--accent); }
 .roadmap-row .title { flex: 1; }
-.node-chevron { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
+.node-chevron { flex: none; width: 14px; text-align: center; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
+/* Empty gutter on childless rows so their badge lines up with expandable rows. */
+.node-chevron-spacer { flex: none; width: 14px; }
 .artifact-sublist { list-style: none; margin: 4px 0 4px 0; padding-left: 16px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid var(--border); }
 
 /* Archive button in the main header */

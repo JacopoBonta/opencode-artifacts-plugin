@@ -335,7 +335,7 @@ test("the left rail shows a theme toggle that flips the theme", async () => {
   localStorage.clear()
   document.documentElement.dataset.theme = "dark"
   render(<App />)
-  const btn = await screen.findByRole("button", { name: /toggle theme/i })
+  const btn = await screen.findByRole("button", { name: /theme/i })
   await userEvent.click(btn)
   expect(document.documentElement.dataset.theme).toBe("light")
 })

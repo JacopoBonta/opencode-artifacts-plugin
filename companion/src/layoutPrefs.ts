@@ -10,6 +10,7 @@ const LEFT_KEY = "oc-artifacts-rail-left"
 const RIGHT_KEY = "oc-artifacts-rail-right"
 const TABS_KEY = "oc-artifacts-open-tabs"
 const ACTIVE_TAB_KEY = "oc-artifacts-active-tab"
+const COLLAPSED_KEY = "oc-artifacts-collapsed"
 
 // Defaults match the original fixed grid columns.
 export const RAIL_LEFT_DEFAULT = 264
@@ -59,6 +60,26 @@ export function getActiveTab(): string | undefined {
 
 export function setActiveTab(id: string | undefined): void {
   writeStored(ACTIVE_TAB_KEY, id ?? "")
+}
+
+// Tree collapse state (session keys, `rm:<id>`, archived bucket) — persisted so
+// the explorer keeps its shape across reloads. Mirrors getOpenTabs/setOpenTabs.
+export function getCollapsed(): Record<string, boolean> {
+  const raw = readStored(COLLAPSED_KEY)
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
+    const out: Record<string, boolean> = {}
+    for (const [k, v] of Object.entries(parsed)) if (typeof v === "boolean") out[k] = v
+    return out
+  } catch {
+    return {}
+  }
+}
+
+export function setCollapsed(map: Record<string, boolean>): void {
+  writeStored(COLLAPSED_KEY, JSON.stringify(map))
 }
 
 function readWidth(key: string, fallback: number, clamp: (n: number) => number): number {

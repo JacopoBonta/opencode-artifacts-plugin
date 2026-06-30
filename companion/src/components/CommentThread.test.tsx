@@ -79,7 +79,7 @@ test("editing an active comment shows a textarea and calls onEdit with trimmed t
   expect(onEdit).toHaveBeenCalledWith("a", "reworded")
 })
 
-test("deleting an active comment calls onDelete", async () => {
+test("deleting an active comment requires a two-step confirm", async () => {
   const onDelete = vi.fn()
   render(
     <CommentThread
@@ -89,7 +89,46 @@ test("deleting an active comment calls onDelete", async () => {
     />,
   )
   await userEvent.click(screen.getByRole("button", { name: /^delete$/i }))
+  // First click only arms the confirm — nothing is deleted yet.
+  expect(onDelete).not.toHaveBeenCalled()
+  await userEvent.click(screen.getByRole("button", { name: /confirm delete/i }))
   expect(onDelete).toHaveBeenCalledWith("a")
+})
+
+test("cancelling the delete confirm does not call onDelete", async () => {
+  const onDelete = vi.fn()
+  render(
+    <CommentThread
+      comments={[{ id: "a", revision: 1, kind: "general", body: "keep me", resolved: false, createdAt: 0 }]}
+      onAdd={() => {}}
+      onDelete={onDelete}
+    />,
+  )
+  await userEvent.click(screen.getByRole("button", { name: /^delete$/i }))
+  await userEvent.click(screen.getByRole("button", { name: /^cancel$/i }))
+  expect(onDelete).not.toHaveBeenCalled()
+  expect(screen.getByRole("button", { name: /^delete$/i })).toBeInTheDocument()
+})
+
+test("keeps the draft when the post fails and clears it on success", async () => {
+  const onAdd = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+  render(<CommentThread comments={[]} onAdd={onAdd} />)
+  const ta = screen.getByPlaceholderText("Add a comment") as HTMLTextAreaElement
+  await userEvent.type(ta, "my note")
+  await userEvent.click(screen.getByRole("button", { name: /^comment$/i }))
+  // Failed post → the draft survives so nothing is lost.
+  expect(ta.value).toBe("my note")
+  await userEvent.click(screen.getByRole("button", { name: /^comment$/i }))
+  await waitFor(() => expect(ta.value).toBe(""))
+  expect(onAdd).toHaveBeenCalledTimes(2)
+})
+
+test("shows an orphaned-anchor tag for comments in orphanedIds", () => {
+  const items: Comment[] = [
+    { id: "x", revision: 1, kind: "anchor", anchor: { quote: "gone", prefix: "", suffix: "" }, body: "note", resolved: false, createdAt: 0 },
+  ]
+  render(<CommentThread comments={items} onAdd={() => {}} orphanedIds={new Set(["x"])} />)
+  expect(screen.getByText(/anchor not in this revision/i)).toBeInTheDocument()
 })
 
 test("resolved comments expose no Edit/Delete controls", async () => {

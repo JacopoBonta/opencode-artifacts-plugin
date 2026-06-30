@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react"
+import React, { useRef, useEffect, useState } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import type { Anchor, Comment } from "../api"
@@ -33,21 +33,55 @@ export function ArtifactView(props: {
   content: string
   comments: Comment[]
   onAnchor: (anchor: Anchor) => void
+  /** when false, text selection offers no "Comment" affordance (read-only views) */
+  canComment?: boolean
   highlightResolved?: boolean
   onHighlightClick?: (commentId: string) => void
   flashAnchorId?: string
   flashKey?: number
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  // A floating "Comment" button anchored to the current text selection — the
+  // discoverable, explicit alternative to silently capturing every selection.
+  const [floating, setFloating] = useState<{ top: number; left: number; anchor: Anchor }>()
 
-  function onMouseUp() {
+  function captureSelection() {
+    if (!props.canComment || !ref.current) return setFloating(undefined)
     const sel = window.getSelection()
-    if (!sel || sel.isCollapsed || !ref.current) return
-    const offsets = selectionOffsets(ref.current, sel.getRangeAt(0))
-    if (!offsets || offsets.end <= offsets.start) return
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return setFloating(undefined)
+    const range = sel.getRangeAt(0)
+    const offsets = selectionOffsets(ref.current, range)
+    if (!offsets || offsets.end <= offsets.start) return setFloating(undefined)
     const text = ref.current.textContent ?? ""
-    props.onAnchor(anchorFromOffsets(text, offsets.start, offsets.end))
+    const anchor = anchorFromOffsets(text, offsets.start, offsets.end)
+    // Position at the selection's end. Layout APIs can be unavailable (jsdom) —
+    // fall back to the origin; the anchor is what matters, not pixel placement.
+    let pos = { bottom: 0, right: 0 }
+    try {
+      const rects = range.getClientRects?.()
+      const r = rects && rects.length ? rects[rects.length - 1] : range.getBoundingClientRect?.()
+      if (r) pos = r
+    } catch { /* no layout engine */ }
+    setFloating({ top: pos.bottom + 6, left: pos.right, anchor })
   }
+
+  function commitSelection() {
+    if (!floating) return
+    props.onAnchor(floating.anchor)
+    window.getSelection()?.removeAllRanges()
+    setFloating(undefined)
+  }
+
+  // Hide the button when the selection collapses (click elsewhere, etc.).
+  useEffect(() => {
+    if (!props.canComment) return
+    const onSelChange = () => {
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed) setFloating(undefined)
+    }
+    document.addEventListener("selectionchange", onSelChange)
+    return () => document.removeEventListener("selectionchange", onSelChange)
+  }, [props.canComment])
 
   function onClick(e: React.MouseEvent) {
     const mark = (e.target as HTMLElement).closest("mark.anchor-highlight") as HTMLElement | null
@@ -92,8 +126,26 @@ export function ArtifactView(props: {
   }, [props.flashAnchorId, props.flashKey])
 
   return (
-    <div className="artifact-view" ref={ref} onMouseUp={onMouseUp} onClick={onClick}>
+    <div
+      className="artifact-view"
+      ref={ref}
+      onMouseUp={captureSelection}
+      onTouchEnd={captureSelection}
+      onClick={onClick}
+    >
       <Markdown remarkPlugins={[remarkGfm]}>{props.content}</Markdown>
+      {floating && (
+        <button
+          type="button"
+          className="comment-floating"
+          style={{ position: "fixed", top: floating.top, left: floating.left }}
+          // Keep the selection alive through the click; we read it from state anyway.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={commitSelection}
+        >
+          💬 Comment
+        </button>
+      )}
     </div>
   )
 }
