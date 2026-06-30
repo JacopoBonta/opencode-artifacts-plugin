@@ -100,9 +100,52 @@ creation). The bash gate is a cooperative heuristic to keep the workflow honest,
 
 ## Configuration
 
+By default the companion server binds to a random free port. To pin it, use
+either of the following (the config option wins over the environment variable):
+
+**1. The `companionPort` plugin option** in your `opencode.json` — pass options
+to the plugin with the `[name, options]` tuple form of the `plugin` array:
+
+```json
+{
+  "plugin": [
+    ["opencode-artifacts-plugin", { "companionPort": 4799 }]
+  ]
+}
+```
+
+The value may be a number or a string, so opencode's
+[variable substitution](https://opencode.ai/docs/config/) works — for example,
+read the port from a `COMPANION_PORT` environment variable:
+
+```json
+{
+  "plugin": [
+    ["opencode-artifacts-plugin", { "companionPort": "{env:COMPANION_PORT}" }]
+  ]
+}
+```
+
+Then set that variable before launching opencode:
+
+```sh
+COMPANION_PORT=4799 opencode
+```
+
+`{env:COMPANION_PORT}` resolves to `4799`, so the companion server listens on
+`http://127.0.0.1:4799`. If `COMPANION_PORT` is unset it resolves to an empty
+string, which is ignored — the server falls back to a random free port.
+
+**2. The `OPENCODE_ARTIFACTS_PORT` environment variable** (used when
+`companionPort` is unset):
+
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `OPENCODE_ARTIFACTS_PORT` | random free port | Pin the companion server's port. |
+
+Resolution order: `companionPort` option → `OPENCODE_ARTIFACTS_PORT` → random
+free port. Empty, non-integer, or out-of-range (`1`–`65535`) values are ignored
+and fall through to the next source.
 
 ## Notes on security & blocking
 

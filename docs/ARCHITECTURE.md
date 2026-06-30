@@ -27,8 +27,11 @@ opencode agent ──▶ publish_artifact tool ──▶ store (disk + memory)
 
 ## Plugin wiring & hooks — `src/index.ts`
 
-`ArtifactsPlugin({ directory, client })` constructs the core services and
-returns the opencode hooks:
+`ArtifactsPlugin({ directory, client }, options)` constructs the core services
+and returns the opencode hooks. `options` is the plugin's config block from
+`opencode.json` (the `[name, options]` tuple form); `resolveCompanionPort`
+derives the server port from it (`companionPort` option → `OPENCODE_ARTIFACTS_PORT`
+env → `0`/random).
 
 - `createStore({ root: <directory>/.opencode/artifacts })` — artifact registry.
 - `createBroadcaster()` — SSE fan-out (`src/events.ts`).
