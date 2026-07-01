@@ -1,6 +1,6 @@
 {
   "name": "opencode-artifacts-plugin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Agent-generated artifacts (plans & reports) for opencode with browser-based review: inline anchored comments, approve / request-changes, and a blocking approval gate for plans.",
   "keywords": [
     "opencode",

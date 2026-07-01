@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-01
+
 ### Added
 - Live agent-status strip pinned to the bottom of the companion's explorer
   rail, recapping what the agent is doing in real time. A new `agent.status`
@@ -64,5 +66,6 @@ improvements, and full documentation.
   artifact store, the loopback HTTP/SSE API, and the React review companion
   (inline anchored comments, revisions, approve / request-changes / decline).
 
+[0.3.0]: https://github.com/JacopoBonta/opencode-artifacts-plugin/releases/tag/v0.3.0
 [0.2.0]: https://github.com/JacopoBonta/opencode-artifacts-plugin/releases/tag/v0.2.0
 [0.1.0]: https://github.com/JacopoBonta/opencode-artifacts-plugin/releases/tag/v0.1.0
