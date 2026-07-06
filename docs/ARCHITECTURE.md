@@ -150,7 +150,9 @@ entry rather than failing the whole load.
   active plan; if that plan is standalone (not a phase) it's marked `completed`,
   re-closing the gate.
 - An **approved plan is frozen** — re-publishing it is rejected unless
-  `resubmit: true`, which clears `completed` and sends it back to review.
+  `resubmit: true`, which sends it back to review. This only works **before**
+  the plan is `completed`: a completed plan is frozen for good and rejects
+  `resubmit` too — further work always needs a fresh plan.
 
 **Blocking.** When a plan is published for review, the tool calls
 `awaitVerdict(id)`, which returns a promise that only resolves when the browser

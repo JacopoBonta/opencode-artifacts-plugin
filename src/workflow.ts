@@ -166,6 +166,41 @@ export function gateState(plan: Artifact | undefined): GateState {
   return plan.status === "approved" ? "open" : "closed"
 }
 
+export interface GateInfo {
+  state: GateState
+  forced: boolean
+  reason: string
+}
+
+/**
+ * Human-readable gate description for the companion's status indicator. When
+ * `forced` is true, a human has manually unlocked edits via the companion's
+ * escape hatch — this short-circuits to "open" regardless of the plan.
+ * Otherwise falls back to `gateState(plan)` plus a short UI-facing reason.
+ * These reason strings are a small, distinct set for a status pill — they do
+ * NOT mirror the longer, agent-facing sentences built inline in index.ts's
+ * `tool.execute.before` throw, which must keep its own exact wording (it's
+ * asserted by tests there).
+ */
+export function describeGate(plan: Artifact | undefined, forced: boolean): GateInfo {
+  if (forced) return { state: "open", forced: true, reason: "Manually unlocked" }
+  const state = gateState(plan)
+  if (!plan) return { state, forced: false, reason: "no plan published" }
+  if (plan.isRoadmap) return { state, forced: false, reason: "roadmap approved, no phase plan active" }
+  if (plan.completed) return { state, forced: false, reason: "plan completed" }
+  const reason =
+    plan.status === "approved"
+      ? "plan approved"
+      : plan.status === "awaiting_review"
+        ? "plan awaiting review"
+        : plan.status === "changes_requested"
+          ? "plan changes requested"
+          : plan.status === "declined"
+            ? "plan declined"
+            : `plan is ${plan.status}`
+  return { state, forced: false, reason }
+}
+
 /** Static rules text injected into the system prompt every turn. */
 export function buildWorkflowContract(): string {
   return `# Artifact workflow (enforced)
@@ -246,11 +281,11 @@ current state, never append "RESOLVED: ..." notes or leave stale text, so each
 submitted revision reads as the single current source of truth. Once approved,
 the plan is frozen and no longer revised.
 
-After a report completes a plan, any further edits require a FRESH plan for the
-new work — or, to continue the same plan, re-publish it with \`resubmit: true\`
-for a fresh approval. For a brand-new implementation request later in the
-session, always publish a FRESH plan (or roadmap) rather than reusing an
-already-approved one.`
+After a report completes a plan, that plan is DONE and frozen for good —
+\`resubmit: true\` can NEVER reopen it, even for a small follow-up change. Any
+further edits, however small, require publishing a FRESH plan (or roadmap).
+\`resubmit: true\` only applies BEFORE a plan is completed: while it is merely
+approved and you need to change its scope or approach mid-implementation.`
 }
 
 /**

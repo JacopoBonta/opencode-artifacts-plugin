@@ -97,3 +97,10 @@ export function validateArchiveInput(b: unknown): Validated<{ archived: boolean 
   if (typeof b.archived !== "boolean") return fail("archived must be a boolean")
   return { ok: true, value: { archived: b.archived } }
 }
+
+/** POST /api/sessions/:id/gate body. */
+export function validateGateInput(b: unknown): Validated<{ forced: boolean }> {
+  if (!isObject(b)) return fail("body must be an object")
+  if (typeof b.forced !== "boolean") return fail("forced must be a boolean")
+  return { ok: true, value: { forced: b.forced } }
+}

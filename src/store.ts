@@ -23,7 +23,11 @@ export interface PublishInput {
   isRoadmap?: boolean
   /** scratch a plan as a non-blocking draft (not yet submitted for review) */
   draft?: boolean
-  /** re-publish an approved (frozen) plan by sending it back for a fresh review */
+  /**
+   * re-publish an approved (frozen) plan by sending it back for a fresh review.
+   * Only valid before the plan is completed (a report published against it) —
+   * a completed plan can never be resubmitted; publish a new plan instead.
+   */
   resubmit?: boolean
 }
 
@@ -43,6 +47,15 @@ export function createStore(opts: StoreOptions) {
   const artifacts = new Map<string, Artifact>()
   const comments = new Map<string, Comment[]>()
   const pending = new Map<string, Pending>()
+  // Sessions where the human manually force-opened the edit gate as an escape
+  // hatch, bypassing the plan-approval flow entirely (see workflow.ts
+  // `describeGate`). Intentionally in-memory only, never persisted: this is
+  // live state scoped to the currently-running opencode session — a server
+  // restart kills that session too, so persistence would add complexity for
+  // zero benefit. Sticky until explicitly re-locked; never auto-cleared by
+  // plan/report lifecycle events, so a human override can't be silently
+  // undone by the agent's own workflow activity.
+  const forcedGateSessions = new Set<string>()
 
   const artDir = (id: string) => join(root, id)
   const metaPath = (id: string) => join(artDir(id), "meta.json")
@@ -73,6 +86,16 @@ export function createStore(opts: StoreOptions) {
       if (!existing) {
         throw new Error(`unknown artifactId: ${input.artifactId}`)
       }
+      // A COMPLETED plan (a report already marked its work done) is frozen for
+      // good — unlike a merely-approved plan, `resubmit` can't reopen it. Its
+      // content is the historical record of finished work; further work,
+      // however small, is a fresh plan.
+      if (existing.type === "plan" && existing.completed) {
+        throw new Error(
+          `completed plan is frozen for good and cannot be resubmitted: ${existing.id}. ` +
+            `Its work was already reported done — publish a new plan for further work.`,
+        )
+      }
       // An APPROVED plan (including a roadmap) is FROZEN: its content is the
       // immutable record of what the human signed off on, so re-publishing it is
       // rejected. Track implementation progress with the todo tool, not by
@@ -97,12 +120,6 @@ export function createStore(opts: StoreOptions) {
         title: input.title,
         status,
         updatedAt: now,
-        // A fresh review (resubmit) clears completion so this plan governs the
-        // gate again. `completed` is only ever set on an approved plan, and an
-        // approved plan can only be re-published via resubmit (the frozen guard
-        // above rejects the rest), so this preserves existing.completed for the
-        // unreachable non-resubmit case purely defensively.
-        completed: input.resubmit ? false : existing.completed,
       }
     } else {
       const status = input.type === "plan" ? planStatus : "published"
@@ -396,6 +413,17 @@ export function createStore(opts: StoreOptions) {
     return road ? { ...road } : undefined
   }
 
+  /** Whether a human has manually force-opened the gate for this session. */
+  function isGateForced(sessionID: string): boolean {
+    return forcedGateSessions.has(sessionID)
+  }
+
+  /** Set or clear the manual gate override for a session. Idempotent. */
+  function setGateForced(sessionID: string, forced: boolean): void {
+    if (forced) forcedGateSessions.add(sessionID)
+    else forcedGateSessions.delete(sessionID)
+  }
+
   /** Direct children of an artifact (parentId === id), oldest first. */
   function getChildren(parentId: string): Artifact[] {
     return [...artifacts.values()]
@@ -444,6 +472,7 @@ export function createStore(opts: StoreOptions) {
     awaitVerdict, resolveVerdict, disposeAll, get, list, load,
     setArchived, remove,
     getActivePlan, getLastCompletedPlan, getRoadmap, getChildren, getDescendants,
+    isGateForced, setGateForced,
     hasPending: (id: string) => pending.has(id),
   }
 }

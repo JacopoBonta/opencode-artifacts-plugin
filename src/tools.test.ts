@@ -39,7 +39,7 @@ function setup() {
     store, events, url: "http://localhost:9999",
     notify: (m) => notes.push(m),
   })
-  return { store, tool, notes }
+  return { store, tool, notes, events }
 }
 
 test("report publish returns immediately with id + url", async () => {
@@ -51,6 +51,48 @@ test("report publish returns immediately with id + url", async () => {
   const parsed = JSON.parse(out as string)
   expect(parsed.artifactId).toBe("id1")
   expect(parsed.url).toContain("/artifacts/id1")
+})
+
+/** Collects every event broadcast during the subscription's lifetime. */
+function collectEvents(events: ReturnType<typeof createBroadcaster>) {
+  const seen: any[] = []
+  events.subscribe((data) => seen.push(JSON.parse(data)))
+  return seen
+}
+
+test("publishing a report broadcasts session.gate (it can complete the active plan)", async () => {
+  const { tool, events } = setup()
+  const seen = collectEvents(events)
+  await tool.execute({ type: "report", title: "R", content: "done" }, { sessionID: "s1" } as any)
+  expect(seen).toContainEqual({ type: "session.gate", sessionID: "s1" })
+})
+
+test("submitting a plan for review broadcasts session.gate", async () => {
+  const { tool, events, store } = setup()
+  const seen = collectEvents(events)
+  const exec = tool.execute({ type: "plan", title: "P", content: VALID_PLAN }, { sessionID: "s1" } as any)
+  await waitPending(store, "id1")
+  expect(seen).toContainEqual({ type: "session.gate", sessionID: "s1" })
+  await store.resolveVerdict("id1", { status: "approved" })
+  await exec
+})
+
+test("scratching a draft phase plan does NOT broadcast session.gate (drafts never govern the gate)", async () => {
+  const { tool, events } = setup()
+  const seen = collectEvents(events)
+  const out = await tool.execute(
+    { type: "plan", title: "P", content: VALID_PLAN, draft: true },
+    { sessionID: "s1" } as any,
+  )
+  expect(JSON.parse(out as string).status).toBe("draft")
+  expect(seen.find((e) => e.type === "session.gate")).toBeUndefined()
+})
+
+test("a publish with no sessionID never broadcasts session.gate", async () => {
+  const { tool, events } = setup()
+  const seen = collectEvents(events)
+  await tool.execute({ type: "report", title: "R", content: "done" }, {} as any)
+  expect(seen.find((e) => e.type === "session.gate")).toBeUndefined()
 })
 
 /** Poll until the store has a pending verdict waiter for `id`, then proceed. */
@@ -141,6 +183,30 @@ test("resubmit re-opens review on an approved plan (blocks until verdict)", asyn
   expect((await store.get("id1"))!.status).toBe("awaiting_review")
   await store.resolveVerdict("id1", { status: "approved" })
   expect(JSON.parse(await exec as string).status).toBe("approved")
+})
+
+test("resubmit:true is rejected once a plan is completed by a report — start a fresh plan instead", async () => {
+  const { tool, store } = setup()
+  const first = tool.execute(
+    { type: "plan", title: "P", content: VALID_PLAN },
+    { sessionID: "s1" } as any,
+  )
+  await waitPending(store, "id1")
+  await store.resolveVerdict("id1", { status: "approved" })
+  await first
+  await tool.execute({ type: "report", title: "R", content: "done" }, { sessionID: "s1" } as any)
+  expect((await store.get("id1"))!.completed).toBe(true)
+
+  const out = await tool.execute(
+    { type: "plan", title: "P", content: VALID_PLAN + "\nnew scope", artifactId: "id1", resubmit: true },
+    { sessionID: "s1" } as any,
+  )
+  const parsed = JSON.parse(out as string)
+  expect(parsed.error).toMatch(/completed/i)
+  expect(store.hasPending("id1")).toBe(false)
+  const a = (await store.get("id1"))!
+  expect(a.completed).toBe(true)
+  expect(a.currentRevision).toBe(1)
 })
 
 test("approved verdict carries the reviewer's comments to the agent", async () => {

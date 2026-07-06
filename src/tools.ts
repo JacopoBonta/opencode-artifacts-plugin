@@ -30,8 +30,9 @@ export function createPublishTool(deps: ToolDeps) {
       "returns immediately. A report is automatically LINKED to (and nested " +
       "under) the session's active plan — you do NOT pass parentId for a report. " +
       "Publishing a report against a STANDALONE plan also COMPLETES it and " +
-      "re-closes the edit gate (start new work with a fresh plan, or resubmit the " +
-      "completed plan). A report against a roadmap PHASE plan nests under that " +
+      "re-closes the edit gate — a completed plan is frozen for good and can " +
+      "NEVER be resubmitted; start any further work, however small, with a FRESH " +
+      "plan. A report against a roadmap PHASE plan nests under that " +
       "phase as a milestone and does NOT complete the roadmap. Content is markdown. " +
       "Required workflow: for any implementation request, do a deep analysis then " +
       "publish a plan FIRST — file edits are blocked until a plan is approved — " +
@@ -55,7 +56,9 @@ export function createPublishTool(deps: ToolDeps) {
       "Once a plan is APPROVED it is FROZEN: re-publishing it is rejected. Do NOT " +
       "re-publish an approved plan to record progress — track implementation " +
       "progress with the todo tool instead. Set resubmit=true ONLY when you change " +
-      "the plan's scope/approach and want to send it back for a fresh review.",
+      "the plan's scope/approach BEFORE it is completed and want to send it back " +
+      "for a fresh review. Once a report has been published against it (COMPLETED), " +
+      "resubmit no longer works — publish a new plan instead.",
     args: {
       type: tool.schema.enum(["plan", "report"]).describe("plan gates the work; report is informational"),
       title: tool.schema.string().describe("short artifact title"),
@@ -79,7 +82,10 @@ export function createPublishTool(deps: ToolDeps) {
       resubmit: tool.schema
         .boolean()
         .optional()
-        .describe("re-publish an approved (frozen) plan by sending it back for a fresh review; required to edit an approved plan"),
+        .describe(
+          "re-publish an approved (frozen) plan by sending it back for a fresh review; required to edit an approved plan. " +
+            "Only works before the plan is completed by a report — a completed plan can never be resubmitted; publish a new plan instead.",
+        ),
     },
     async execute(args, context) {
       const sessionID = context.sessionID
@@ -97,13 +103,24 @@ export function createPublishTool(deps: ToolDeps) {
           })
         }
 
-        // An approved plan is FROZEN. Re-publishing it (without resubmit) is
-        // rejected with an actionable message instead of a raw thrown error —
-        // the store also guards this, but catching it here keeps the agent's
-        // tool result structured. resubmit:true falls through to a fresh review.
-        if (args.artifactId && !args.resubmit) {
+        // An approved plan is FROZEN, and a COMPLETED plan (a report already
+        // published against it) is frozen for good — resubmit can't reopen it.
+        // Both are rejected with an actionable message instead of a raw thrown
+        // error — the store also guards this, but catching it here keeps the
+        // agent's tool result structured. resubmit:true only falls through to a
+        // fresh review for an approved-but-not-yet-completed plan.
+        if (args.artifactId) {
           const existing = await store.get(args.artifactId)
-          if (existing?.status === "approved") {
+          if (existing?.completed) {
+            return JSON.stringify({
+              error:
+                "This plan's work was already reported done — it is completed and " +
+                "cannot be resubmitted. Publish a NEW plan for further work.",
+              artifactId: args.artifactId,
+              status: existing.status,
+            })
+          }
+          if (existing?.status === "approved" && !args.resubmit) {
             return JSON.stringify({
               error:
                 "This plan is approved and frozen — it cannot be edited. Track " +
@@ -133,6 +150,12 @@ export function createPublishTool(deps: ToolDeps) {
       })
       const artifactUrl = `${url}/artifacts/${artifact.id}${tokenQuery}`
       events.broadcast({ type: "artifact.published", id: artifact.id })
+      // A plan submission/resubmit or a report publish can change what the
+      // session's gate looks like (getActivePlan's result). A bare draft
+      // can't — drafts are excluded from getActivePlan — so skip it there.
+      if (sessionID && !(args.type === "plan" && artifact.status === "draft")) {
+        events.broadcast({ type: "session.gate", sessionID })
+      }
 
       if (args.type === "report") {
         notify(`Report published: ${artifact.title}`, artifactUrl)

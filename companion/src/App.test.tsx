@@ -18,6 +18,8 @@ beforeEach(() => {
     content: "# Plan\n\nstep one", comments: [],
   })
   vi.spyOn(api, "getRevision").mockResolvedValue({ content: "" })
+  vi.spyOn(api, "getGate").mockResolvedValue({ state: "closed", forced: false, reason: "no plan published" })
+  vi.spyOn(api, "setGateForced").mockResolvedValue({ state: "open", forced: true, reason: "Manually unlocked" })
 })
 
 afterEach(() => vi.restoreAllMocks())
@@ -404,4 +406,46 @@ test("switching sessions drops a stale status strip", async () => {
   act(() => emit!({ type: "session.active", sessionID: "ses_b" }))
   await waitFor(() => expect(screen.queryByText("Editing a.ts")).toBeNull())
   expect(screen.getByText("Idle")).toBeInTheDocument()
+})
+
+test("fetches gate info for the live session and shows the pill", async () => {
+  vi.mocked(api.getGate).mockResolvedValue({ state: "closed", forced: false, reason: "no plan published" })
+  render(<App />)
+  await focusSession("ses_a")
+  await waitFor(() => expect(api.getGate).toHaveBeenCalledWith("ses_a"))
+  expect(await screen.findByText(/gate closed — no plan published/i)).toBeInTheDocument()
+})
+
+test("no gate pill when there is no live session", async () => {
+  render(<App />)
+  await waitFor(() => screen.getByText(/no artifact open/i))
+  expect(screen.queryByText(/gate (open|closed)/i)).toBeNull()
+  expect(api.getGate).not.toHaveBeenCalled()
+})
+
+test("refetches gate info only on a session.gate event matching the live session", async () => {
+  render(<App />)
+  await focusSession("ses_a")
+  await waitFor(() => expect(api.getGate).toHaveBeenCalledWith("ses_a"))
+  vi.mocked(api.getGate).mockClear()
+
+  // A background session's gate change is ignored.
+  act(() => emit!({ type: "session.gate", sessionID: "ses_b" }))
+  await Promise.resolve()
+  expect(api.getGate).not.toHaveBeenCalled()
+
+  // The live session's gate change triggers a refetch.
+  act(() => emit!({ type: "session.gate", sessionID: "ses_a" }))
+  await waitFor(() => expect(api.getGate).toHaveBeenCalledWith("ses_a"))
+})
+
+test("clicking Unlock calls setGateForced and updates the pill", async () => {
+  vi.mocked(api.getGate).mockResolvedValue({ state: "closed", forced: false, reason: "no plan published" })
+  vi.mocked(api.setGateForced).mockResolvedValue({ state: "open", forced: true, reason: "Manually unlocked" })
+  render(<App />)
+  await focusSession("ses_a")
+  await screen.findByText(/gate closed/i)
+  await userEvent.click(screen.getByRole("button", { name: /unlock/i }))
+  expect(api.setGateForced).toHaveBeenCalledWith("ses_a", true)
+  expect(await screen.findByText(/gate open — manually unlocked/i)).toBeInTheDocument()
 })

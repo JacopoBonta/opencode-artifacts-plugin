@@ -98,6 +98,12 @@ status`, running tests) and git bookkeeping (`git add`/`commit`/`push`, branch
 creation). The bash gate is a cooperative heuristic to keep the workflow honest,
 **not** a security sandbox.
 
+The companion also shows a **gate status indicator** in the left rail with an
+**Unlock** button — a manual escape hatch that force-opens the gate for the
+live session without publishing/approving a plan, for when you just want the
+agent to make a small edit without the ceremony. It's sticky per session until
+you click **Re-lock**, and isn't persisted across a restart of the plugin.
+
 ## Configuration
 
 By default the companion server binds to a random free port. To pin it, use

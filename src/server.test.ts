@@ -486,3 +486,73 @@ test("static serving returns files under staticDir and falls back to index.html"
   expect(spa.status).toBe(200)
   expect(await spa.text()).toContain("<title>app</title>")
 })
+
+// --- gate force-open escape hatch ---
+
+test("GET /api/sessions/:id/gate reports closed/no-plan for a never-seen session id", async () => {
+  const { srv } = setup()
+  const res = await fetch(`${srv.url}/api/sessions/never-seen/gate`)
+  expect(res.status).toBe(200)
+  expect(await res.json()).toEqual({ state: "closed", forced: false, reason: "no plan published" })
+})
+
+test("GET /api/sessions/:id/gate reflects the session's active plan", async () => {
+  const { store, srv } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x", sessionID: "s1" })
+  await store.resolveVerdict(artifact.id, { status: "approved" })
+  const res = await fetch(`${srv.url}/api/sessions/s1/gate`)
+  expect(await res.json()).toEqual({ state: "open", forced: false, reason: "plan approved" })
+})
+
+test("POST /api/sessions/:id/gate force-opens and re-locks the gate, broadcasting session.gate", async () => {
+  const { store, srv, events } = setup()
+  const seen: any[] = []
+  events.subscribe((data) => seen.push(JSON.parse(data)))
+
+  const open = await fetch(`${srv.url}/api/sessions/s1/gate`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ forced: true }),
+  })
+  expect(open.status).toBe(200)
+  expect(await open.json()).toEqual({ state: "open", forced: true, reason: "Manually unlocked" })
+  expect(store.isGateForced("s1")).toBe(true)
+  expect(seen).toContainEqual({ type: "session.gate", sessionID: "s1" })
+
+  const relock = await fetch(`${srv.url}/api/sessions/s1/gate`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ forced: false }),
+  })
+  expect(await relock.json()).toEqual({ state: "closed", forced: false, reason: "no plan published" })
+  expect(store.isGateForced("s1")).toBe(false)
+})
+
+test("POST /api/sessions/:id/gate with an invalid body returns 400", async () => {
+  const { srv } = setup()
+  const res = await fetch(`${srv.url}/api/sessions/s1/gate`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ forced: "yes" }),
+  })
+  expect(res.status).toBe(400)
+})
+
+test("gate routes require the capability token when one is configured", async () => {
+  const { srv } = authSetup("secret")
+  const noToken = await fetch(`${srv.url}/api/sessions/s1/gate`)
+  expect(noToken.status).toBe(401)
+  const withToken = await fetch(`${srv.url}/api/sessions/s1/gate`, {
+    headers: { "x-artifacts-token": "secret" },
+  })
+  expect(withToken.status).toBe(200)
+})
+
+test("approving a plan broadcasts session.gate for its session", async () => {
+  const { store, srv, events } = setup()
+  const { artifact } = await store.publish({ type: "plan", title: "P", content: "x", sessionID: "s1" })
+  const seen: any[] = []
+  events.subscribe((data) => seen.push(JSON.parse(data)))
+  await fetch(`${srv.url}/api/artifacts/${artifact.id}/verdict`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "approved" }),
+  })
+  expect(seen).toContainEqual({ type: "session.gate", sessionID: "s1" })
+})
