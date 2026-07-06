@@ -6,6 +6,7 @@ export type ServerEvent =
   | { type: "comment.added"; id: string }
   | { type: "comment.updated"; id: string }
   | { type: "session.active"; sessionID?: string }
+  | { type: "session.gate"; sessionID: string }
   | { type: "agent.status"; sessionID: string; state: "working" | "idle"; message: string }
   | { type: "ping" }
 

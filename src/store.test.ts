@@ -178,7 +178,7 @@ test("a report completes the session's standalone active plan; the gate re-close
   expect(store.getLastCompletedPlan("s1")!.id).toBe(plan.id)
 })
 
-test("an approved+completed plan is frozen; resubmit re-opens it", async () => {
+test("a completed plan is frozen for good; resubmit cannot reopen it", async () => {
   const store = newStore()
   const s = { sessionID: "s1" }
   const { artifact: plan } = await store.publish({ type: "plan", title: "P", content: "v1", ...s })
@@ -194,11 +194,14 @@ test("an approved+completed plan is frozen; resubmit re-opens it", async () => {
   expect((await store.get(plan.id))!.currentRevision).toBe(1)
   expect(store.getActivePlan("s1")).toBeUndefined()
 
-  // resubmit clears completion and re-enters review → active again.
-  const { artifact: re } = await store.publish({ type: "plan", title: "P", content: "v3", artifactId: plan.id, resubmit: true, ...s })
-  expect(re.completed).toBe(false)
-  expect(re.status).toBe("awaiting_review")
-  expect(store.getActivePlan("s1")!.id).toBe(plan.id)
+  // Unlike a merely-approved plan, a COMPLETED plan can't be reopened via
+  // resubmit either — its work is done; further work needs a fresh plan.
+  await expect(
+    store.publish({ type: "plan", title: "P", content: "v3", artifactId: plan.id, resubmit: true, ...s }),
+  ).rejects.toThrow(/completed/i)
+  expect((await store.get(plan.id))!.completed).toBe(true)
+  expect((await store.get(plan.id))!.currentRevision).toBe(1)
+  expect(store.getActivePlan("s1")).toBeUndefined()
 })
 
 test("a phase report (parentId) does NOT complete its phase plan", async () => {
@@ -469,4 +472,31 @@ test("state survives reload from disk", async () => {
   const list = await s2.list()
   expect(list).toHaveLength(1)
   expect(list[0].title).toBe("R")
+})
+
+test("isGateForced defaults to false and setGateForced round-trips per session", () => {
+  const store = newStore()
+  expect(store.isGateForced("s1")).toBe(false)
+  store.setGateForced("s1", true)
+  expect(store.isGateForced("s1")).toBe(true)
+  // Independent of other sessions.
+  expect(store.isGateForced("s2")).toBe(false)
+  // Idempotent: setting the same value twice is a no-op either way.
+  store.setGateForced("s1", true)
+  expect(store.isGateForced("s1")).toBe(true)
+  store.setGateForced("s1", false)
+  expect(store.isGateForced("s1")).toBe(false)
+  store.setGateForced("s1", false)
+  expect(store.isGateForced("s1")).toBe(false)
+})
+
+test("a force-open flag is not persisted: a fresh store instance never has it set", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "artifacts-"))
+  const opts = { root: dir, clock: () => 1, idgen: () => "id1" }
+  const s1 = createStore(opts)
+  s1.setGateForced("s1", true)
+  expect(s1.isGateForced("s1")).toBe(true)
+  const s2 = createStore(opts)
+  await s2.load()
+  expect(s2.isGateForced("s1")).toBe(false)
 })

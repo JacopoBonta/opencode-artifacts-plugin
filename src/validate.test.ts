@@ -4,6 +4,7 @@ import {
   validateCommentEdit,
   validateVerdictInput,
   validateArchiveInput,
+  validateGateInput,
   MAX_TEXT,
 } from "./validate"
 
@@ -74,4 +75,14 @@ test("validateArchiveInput requires a strict boolean", () => {
   expect(validateArchiveInput({ archived: "true" }).ok).toBe(false)
   expect(validateArchiveInput({ archived: 1 }).ok).toBe(false)
   expect(validateArchiveInput({}).ok).toBe(false)
+})
+
+test("validateGateInput requires a strict boolean", () => {
+  expect(validateGateInput({ forced: true }).ok).toBe(true)
+  expect(validateGateInput({ forced: false }).ok).toBe(true)
+  expect(validateGateInput({ forced: "true" }).ok).toBe(false)
+  expect(validateGateInput({ forced: 1 }).ok).toBe(false)
+  expect(validateGateInput({}).ok).toBe(false)
+  expect(validateGateInput(null).ok).toBe(false)
+  expect(validateGateInput([]).ok).toBe(false)
 })

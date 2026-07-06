@@ -7,7 +7,9 @@ import {
   validateCommentEdit,
   validateVerdictInput,
   validateArchiveInput,
+  validateGateInput,
 } from "./validate"
+import { describeGate } from "./workflow"
 
 export interface ServerOptions {
   store: Store
@@ -235,6 +237,10 @@ export function createServer(opts: ServerOptions) {
         // so it stops instead of waiting on (or acting on) the resolved tool call.
         if (v.value.status === "declined" && va.sessionID) opts.interruptSession?.(va.sessionID)
         events.broadcast({ type: "artifact.updated", id })
+        // Approve/changes_requested/decline all change what the session's
+        // gate looks like (getActivePlan's result), so let the companion
+        // know to refetch it.
+        if (va.sessionID) events.broadcast({ type: "session.gate", sessionID: va.sessionID })
         return json({ ok: true })
       }
 
@@ -253,6 +259,26 @@ export function createServer(opts: ServerOptions) {
         }
         events.broadcast({ type: "artifact.archived", id })
         return json({ ok: true })
+      }
+
+      // A session isn't a stored entity (no session registry exists — only
+      // artifact.sessionID groupings), so there's no existence check here:
+      // any sessionID is valid, including one with zero artifacts published
+      // yet (force-opening the gate before any plan exists is supported).
+      const gateMatch = path.match(/^\/api\/sessions\/([^/]+)\/gate$/)
+      if (gateMatch && req.method === "GET") {
+        const sessionID = gateMatch[1]
+        return json(describeGate(store.getActivePlan(sessionID), store.isGateForced(sessionID)))
+      }
+      if (gateMatch && req.method === "POST") {
+        const sessionID = gateMatch[1]
+        let b: unknown
+        try { b = await req.json() } catch { return json({ error: "invalid json" }, 400) }
+        const v = validateGateInput(b)
+        if (!v.ok) return json({ error: v.error }, 400)
+        store.setGateForced(sessionID, v.value.forced)
+        events.broadcast({ type: "session.gate", sessionID })
+        return json(describeGate(store.getActivePlan(sessionID), store.isGateForced(sessionID)))
       }
 
       const deleteMatch = path.match(/^\/api\/artifacts\/([^/]+)$/)

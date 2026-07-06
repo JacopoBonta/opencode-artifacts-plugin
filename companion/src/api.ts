@@ -21,8 +21,11 @@ export type ServerEvent =
   | { type: "comment.added"; id: string }
   | { type: "comment.updated"; id: string }
   | { type: "session.active"; sessionID?: string }
+  | { type: "session.gate"; sessionID: string }
   | { type: "agent.status"; sessionID: string; state: "working" | "idle"; message: string }
   | { type: "ping" }
+
+export interface GateInfo { state: "open" | "closed"; forced: boolean; reason: string }
 
 import { getToken } from "./token"
 
@@ -89,6 +92,12 @@ export async function setArchived(id: string, archived: boolean): Promise<void> 
 }
 export async function deleteArtifact(id: string): Promise<void> {
   await req(`/api/artifacts/${id}`, { method: "DELETE" })
+}
+export async function getGate(sessionID: string): Promise<GateInfo> {
+  return (await req(`/api/sessions/${sessionID}/gate`)).json()
+}
+export async function setGateForced(sessionID: string, forced: boolean): Promise<GateInfo> {
+  return (await req(`/api/sessions/${sessionID}/gate`, jsonPost({ forced }))).json()
 }
 export function subscribeEvents(
   onEvent: (e: ServerEvent) => void,

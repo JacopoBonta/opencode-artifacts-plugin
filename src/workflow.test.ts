@@ -3,6 +3,7 @@ import {
   validatePlanStructure,
   isMutatingCall,
   gateState,
+  describeGate,
   buildSessionContext,
   buildDeclineContext,
   buildRoadmapContext,
@@ -171,6 +172,40 @@ test("gateState is open only when the active plan is an approved non-roadmap pla
   expect(gateState(plan("draft"))).toBe("closed")
   // A plan completed by a report never unblocks edits, even though it's approved.
   expect(gateState(plan("approved", { completed: true }))).toBe("closed")
+})
+
+test("describeGate: forced open short-circuits regardless of plan state", () => {
+  expect(describeGate(undefined, true)).toEqual({ state: "open", forced: true, reason: "Manually unlocked" })
+  // Forced wins even over a plan the workflow would otherwise close the gate for.
+  expect(describeGate(plan("awaiting_review"), true)).toEqual({
+    state: "open", forced: true, reason: "Manually unlocked",
+  })
+  // And still reports forced:true even when the plan is ALSO genuinely approved.
+  expect(describeGate(plan("approved"), true)).toEqual({
+    state: "open", forced: true, reason: "Manually unlocked",
+  })
+})
+
+test("describeGate: unforced reasons mirror gateState per plan state", () => {
+  expect(describeGate(undefined, false)).toEqual({ state: "closed", forced: false, reason: "no plan published" })
+  expect(describeGate(plan("awaiting_review"), false)).toEqual({
+    state: "closed", forced: false, reason: "plan awaiting review",
+  })
+  expect(describeGate(plan("changes_requested"), false)).toEqual({
+    state: "closed", forced: false, reason: "plan changes requested",
+  })
+  expect(describeGate(plan("declined"), false)).toEqual({
+    state: "closed", forced: false, reason: "plan declined",
+  })
+  expect(describeGate(plan("approved"), false)).toEqual({
+    state: "open", forced: false, reason: "plan approved",
+  })
+  expect(describeGate(plan("approved", { isRoadmap: true }), false)).toEqual({
+    state: "closed", forced: false, reason: "roadmap approved, no phase plan active",
+  })
+  expect(describeGate(plan("approved", { completed: true }), false)).toEqual({
+    state: "closed", forced: false, reason: "plan completed",
+  })
 })
 
 test("buildRoadmapContext enumerates phases with their statuses and progress", () => {

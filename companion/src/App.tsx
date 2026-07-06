@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from "react"
 import "./App.css"
 import * as api from "./api"
-import type { Anchor, Artifact, ArtifactDetail } from "./api"
+import type { Anchor, Artifact, ArtifactDetail, GateInfo } from "./api"
 import { ArtifactTree, visibleArtifactIds, isOpen } from "./components/ArtifactTree"
 import { TabBar } from "./components/TabBar"
 import { CommandPalette } from "./components/CommandPalette"
@@ -14,6 +14,7 @@ import { ReadingWidthToggle } from "./components/ReadingWidthToggle"
 import { ResizeHandle } from "./components/ResizeHandle"
 import { Toaster } from "./components/Toaster"
 import { StatusStrip } from "./components/StatusStrip"
+import { GateStatus } from "./components/GateStatus"
 import { ShortcutHelp, ShortcutList } from "./components/ShortcutHelp"
 import { findAnchorOffsets } from "./anchor-dom"
 import { useToasts } from "./toasts"
@@ -42,6 +43,11 @@ export function App() {
   // Live "what the agent is doing now" phrase for the active session, pushed over
   // SSE. undefined / idle hides the status strip.
   const [agentStatus, setAgentStatus] = useState<{ state: "working" | "idle"; message: string }>()
+  // Whether the edit gate is open/closed for the live session, and whether a
+  // human has manually forced it open. Fetched on session change and on the
+  // session.gate SSE signal; undefined until the first fetch resolves.
+  const [gateInfo, setGateInfo] = useState<GateInfo>()
+  const [gateBusy, setGateBusy] = useState(false)
   // Artifact ids with new/updated activity not yet opened — drives tree + tab dots.
   const [unseen, setUnseen] = useState<Set<string>>(new Set())
   // Tree collapse state (session keys, `rm:<id>`, archived) and the keyboard cursor.
@@ -92,6 +98,14 @@ export function App() {
       push("error", "Couldn't reach the companion server.", { label: "Retry", onClick: () => { refreshList() } })
     }
   }, [push])
+  const refreshGate = useCallback(async (sessionID: string) => {
+    try {
+      setGateInfo(await api.getGate(sessionID))
+    } catch {
+      // Best-effort: leave the last-known (or undefined) gate info rather
+      // than toast-spamming on a transient failure.
+    }
+  }, [])
   const refreshDetail = useCallback(async (id: string) => {
     const seq = ++detailSeq.current
     try {
@@ -170,6 +184,13 @@ export function App() {
     refreshDetail(activeTabId)
   }, [activeTabId, refreshDetail])
 
+  // Fetch gate info whenever the live session changes; clear it when there's
+  // no live session (nothing to show/unlock).
+  useEffect(() => {
+    if (!activeSessionID) { setGateInfo(undefined); return }
+    refreshGate(activeSessionID)
+  }, [activeSessionID, refreshGate])
+
   useEffect(() => {
     return api.subscribeEvents(
       (e) => {
@@ -186,6 +207,12 @@ export function App() {
           // Only reflect the session currently in view; ignore background sessions.
           if (e.sessionID !== activeSessionIDRef.current) return
           setAgentStatus({ state: e.state, message: e.message })
+          return
+        }
+        if (e.type === "session.gate") {
+          // Only refetch for the session currently in view; a background
+          // session's gate change doesn't need to be reflected here.
+          if (e.sessionID === activeSessionIDRef.current) refreshGate(e.sessionID)
           return
         }
         refreshList()
@@ -228,7 +255,7 @@ export function App() {
     )
     // Subscribe ONCE: the handler reads live tab state from refs, so it never
     // tears down/recreates the EventSource (which would drop events) on a switch.
-  }, [refreshList, refreshDetail, closeTab])
+  }, [refreshList, refreshDetail, closeTab, refreshGate])
 
   // Land in the live work: when the opencode session changes, open its
   // most-recently-updated artifact once. Keyed on the session (not on openTabs)
@@ -300,6 +327,17 @@ export function App() {
       push("error", "Couldn't unarchive the artifact.")
     }
     refreshList()
+  }
+  async function setGate(forced: boolean) {
+    if (!activeSessionID) return
+    setGateBusy(true)
+    try {
+      setGateInfo(await api.setGateForced(activeSessionID, forced))
+    } catch {
+      push("error", forced ? "Couldn't unlock the gate." : "Couldn't re-lock the gate.")
+    } finally {
+      setGateBusy(false)
+    }
   }
   async function remove(id: string) {
     try {
@@ -507,6 +545,14 @@ export function App() {
             onDelete={remove}
           />
         </div>
+        {activeSessionID && (
+          <GateStatus
+            info={gateInfo}
+            onUnlock={() => setGate(true)}
+            onRelock={() => setGate(false)}
+            busy={gateBusy}
+          />
+        )}
         <StatusStrip status={agentStatus} />
       </aside>
       <main className="main">

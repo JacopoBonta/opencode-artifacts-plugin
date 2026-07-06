@@ -173,6 +173,75 @@ test("gate blocks after a report completed the plan, with a 'completed by a repo
   await hooks.dispose?.()
 })
 
+/**
+ * The plugin's store/server are private to the ArtifactsPlugin closure — the
+ * only way to reach them from outside (as the real companion does) is via the
+ * companion server's HTTP API, authenticated with its capability token. A
+ * report publish returns a deep link (`url`) carrying both the server's
+ * origin and the token as a `?token=` query param — extract them from there.
+ */
+async function gateOrigin(hooks: Awaited<ReturnType<typeof init>>, sessionID: string) {
+  const out = JSON.parse(
+    (await hooks.tool!.publish_artifact.execute(
+      { type: "report", title: "R", content: "x" },
+      { sessionID } as any,
+    )) as string,
+  )
+  const url = new URL(out.url)
+  return { origin: url.origin, token: url.searchParams.get("token")! }
+}
+
+test("gate: a human's manual force-open bypasses the plan-based gate", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "proj-"))
+  const hooks = await init(dir)
+  const { origin, token } = await gateOrigin(hooks, "s1")
+
+  // No plan at all → normally blocked.
+  await expect(
+    hooks["tool.execute.before"]!({ tool: "edit", sessionID: "s1", callID: "c1" } as any, { args: {} } as any),
+  ).rejects.toThrow(/Workflow gate/)
+
+  // Force the gate open via the companion's escape-hatch endpoint.
+  const res = await fetch(`${origin}/api/sessions/s1/gate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-artifacts-token": token },
+    body: JSON.stringify({ forced: true }),
+  })
+  expect(res.status).toBe(200)
+
+  // The same mutating call is now allowed, with no plan at all.
+  await hooks["tool.execute.before"]!(
+    { tool: "edit", sessionID: "s1", callID: "c2" } as any,
+    { args: {} } as any,
+  )
+  // A different, un-forced session is still gated.
+  await expect(
+    hooks["tool.execute.before"]!({ tool: "edit", sessionID: "s2", callID: "c3" } as any, { args: {} } as any),
+  ).rejects.toThrow(/Workflow gate/)
+  await hooks.dispose?.()
+})
+
+test("system.transform notes the manual unlock only while the gate is force-opened", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "proj-"))
+  const hooks = await init(dir)
+  const { origin, token } = await gateOrigin(hooks, "s1")
+
+  const before = { system: [] as string[] }
+  await hooks["experimental.chat.system.transform"]!({ sessionID: "s1" } as any, before as any)
+  expect(before.system.join("\n")).not.toContain("Manual edit unlock")
+
+  await fetch(`${origin}/api/sessions/s1/gate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-artifacts-token": token },
+    body: JSON.stringify({ forced: true }),
+  })
+
+  const after = { system: [] as string[] }
+  await hooks["experimental.chat.system.transform"]!({ sessionID: "s1" } as any, after as any)
+  expect(after.system.join("\n")).toContain("Manual edit unlock")
+  await hooks.dispose?.()
+})
+
 test("system.transform injects the contract and the active plan content", async () => {
   const dir = mkdtempSync(join(tmpdir(), "proj-"))
   seedArtifact(dir, { ...PLAN, status: "approved" }, "PLAN-BODY-MARKER")
