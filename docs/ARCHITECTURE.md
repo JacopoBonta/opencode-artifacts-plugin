@@ -39,11 +39,16 @@ env → `0`/random).
   static companion (`src/server.ts`).
 - `createPublishTool({ store, events, url, token, notify })` — the
   `publish_artifact` tool (`src/tools.ts`).
+- `createOpenCompanionTool({ url, token, openBrowser })` — the
+  `open_companion` tool (`src/tools.ts`), a manual escape hatch that reopens
+  the browser (and returns the deep link) when a tab was closed or a new
+  browsing context never picked up the token.
 
 A per-session **capability token** (`crypto.randomUUID()`) is generated at
-startup and passed to both the server and the tool. On the first publish, the
+startup and passed to the server and both tools. On the first publish, the
 plugin opens the browser at `${server.url}/?token=…` (once; guarded by an
-`opened` flag).
+`opened` flag) — `open_companion` reopens it unconditionally, bypassing that
+flag.
 
 Registered hooks:
 
@@ -196,7 +201,9 @@ anything reaches the store. Free-text fields are capped at `MAX_TEXT` (10k).
 - **Capability token** — every `/api/*` request must present the per-session
   token: the `x-artifacts-token` header, or `?token=` for the SSE stream (which
   can't set headers). The companion captures the token from the URL the plugin
-  opens, stores it in `sessionStorage`, and strips it from the address bar.
+  opens, stores it in `localStorage` (so new tabs/reloads in the same browser
+  stay authenticated), and strips it from the address bar. Incognito/private
+  windows keep their own isolated storage regardless — see `open_companion`.
 - **Origin check** — state-changing requests (POST/PATCH/DELETE) with a
   mismatched `Origin` are rejected (CSRF defense in depth behind the token).
 - **Path safety** — `safeId` rejects ids containing `..`, `/`, or a leading `.`

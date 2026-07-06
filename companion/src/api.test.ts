@@ -2,10 +2,10 @@ import { test, expect, vi, afterEach, beforeEach } from "vitest"
 import { listArtifacts, getArtifact, postComment, patchComment, deleteComment, postVerdict, getRevision, subscribeEvents } from "./api"
 
 // All API calls carry the capability token; seed one for the default cases.
-beforeEach(() => sessionStorage.setItem("oc-artifacts-token", "tok"))
+beforeEach(() => localStorage.setItem("oc-artifacts-token", "tok"))
 afterEach(() => {
   vi.restoreAllMocks()
-  sessionStorage.clear()
+  localStorage.clear()
 })
 
 const hasToken = expect.objectContaining({
@@ -88,7 +88,7 @@ test("requests attach the x-artifacts-token header when a token is present", asy
 })
 
 test("no token header is sent when none is stored", async () => {
-  sessionStorage.clear()
+  localStorage.clear()
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [] })
   vi.stubGlobal("fetch", fetchMock)
   await listArtifacts()

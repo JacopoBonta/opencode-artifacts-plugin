@@ -193,3 +193,31 @@ export function createPublishTool(deps: ToolDeps) {
     },
   })
 }
+
+export interface OpenCompanionToolDeps {
+  url: string
+  /** capability token appended to the deep link so the companion can authenticate */
+  token?: string
+  /** open the browser; injected so tests stay headless */
+  openBrowser: (url: string) => void | Promise<void>
+}
+
+export function createOpenCompanionTool(deps: OpenCompanionToolDeps) {
+  const { url, token, openBrowser } = deps
+  const companionUrl = token ? `${url}/?token=${encodeURIComponent(token)}` : url
+
+  return tool({
+    description:
+      "Reopen the browser companion. Use this when the user says they closed the " +
+      "companion tab, or that it stopped working / lost its session (e.g. a fresh " +
+      "tab, or an incognito/private window on the same port never picked up its " +
+      "auth token). Opens the default browser to the companion and returns its " +
+      "URL (with the capability token) so it can also be pasted manually into " +
+      "another window.",
+    args: {},
+    async execute() {
+      await openBrowser(companionUrl)
+      return JSON.stringify({ url: companionUrl })
+    },
+  })
+}

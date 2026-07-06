@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `open_companion` tool: reopens the browser companion (and returns its link)
+  when a tab was closed, or a new tab/incognito window on the same port never
+  picked up the capability token.
 - Live agent-status strip pinned to the bottom of the companion's explorer
   rail, recapping what the agent is doing in real time. A new `agent.status`
   SSE event drives it; tool calls are mapped to phrases (Editing X, Running
@@ -17,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `opencode.json` (the `[name, options]` tuple form of the `plugin` array).
   Supports opencode variable substitution, e.g. `"companionPort": "{env:MY_ENV}"`.
   Resolution order: `companionPort` → `OPENCODE_ARTIFACTS_PORT` env → random port.
+
+### Changed
+- The companion's capability token now persists to `localStorage` instead of
+  `sessionStorage`, so a new tab or reload in the same browser stays
+  authenticated without needing to reopen the companion.
 
 ## [0.2.0] - 2026-06-30
 
