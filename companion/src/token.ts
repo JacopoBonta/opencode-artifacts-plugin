@@ -1,16 +1,19 @@
 /**
  * Capability token handling. The backend opens the browser at `/?token=…`; we
- * capture that token once, persist it for the tab session, and strip it from the
- * URL so it doesn't linger in the address bar or browser history. Every API call
+ * capture that token once, persist it to localStorage so new tabs/reloads in
+ * this same browser profile stay authenticated, and strip it from the URL so
+ * it doesn't linger in the address bar or browser history. Every API call
  * then sends it (see api.ts), which is what authenticates the companion to the
- * loopback-bound server.
+ * loopback-bound server. Incognito/private windows keep their own isolated
+ * storage regardless — they need a fresh `?token=` link (e.g. from the
+ * `open_companion` tool) to authenticate.
  */
 
 const KEY = "oc-artifacts-token"
 
 function read(): string | null {
   try {
-    return sessionStorage.getItem(KEY)
+    return localStorage.getItem(KEY)
   } catch {
     return null
   }
@@ -18,16 +21,16 @@ function read(): string | null {
 
 function write(value: string): void {
   try {
-    sessionStorage.setItem(KEY, value)
+    localStorage.setItem(KEY, value)
   } catch {
-    /* sessionStorage unavailable — token stays in memory only for this load */
+    /* localStorage unavailable — token stays in memory only for this load */
   }
 }
 
 let memo: string | null = null
 
 /**
- * Capture a `?token=` query param into sessionStorage (and memory) and remove it
+ * Capture a `?token=` query param into localStorage (and memory) and remove it
  * from the visible URL. Idempotent and safe to call when no token is present
  * (e.g. a token-less dev backend) — it simply leaves any existing stored token.
  */

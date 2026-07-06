@@ -88,6 +88,12 @@ When running from source, build the companion once with
 approve) and then one plan → implement → report cycle per **phase**. Approving a
 roadmap does *not* unblock edits — each phase plan is reviewed on its own.
 
+The companion only opens the browser automatically once. If you close that tab,
+open a fresh one to the same URL, or open it in an incognito/private window on
+the same port, it won't be authenticated — just ask the agent to **reopen the
+companion** (the `open_companion` tool) and it'll relaunch the browser and hand
+back a link you can paste into another window if needed.
+
 ### What the gate blocks
 
 While there's no approved plan, these are blocked: the `write`, `edit`, and

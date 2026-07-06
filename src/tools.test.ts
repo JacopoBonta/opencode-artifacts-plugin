@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createStore } from "./store"
 import { createBroadcaster } from "./events"
-import { createPublishTool } from "./tools"
+import { createPublishTool, createOpenCompanionTool } from "./tools"
 
 const VALID_PLAN = `# P
 ## Context
@@ -342,4 +342,30 @@ test("the creating agent name is persisted on the artifact", async () => {
     { sessionID: "s1", agent: "build" } as any,
   )
   expect((await store.get("id1"))!.agent).toBe("build")
+})
+
+test("open_companion opens the browser at the URL with the token and returns it", async () => {
+  const opened: string[] = []
+  const tool = createOpenCompanionTool({
+    url: "http://localhost:9999",
+    token: "secret",
+    openBrowser: (url) => {
+      opened.push(url)
+    },
+  })
+  const out = await tool.execute({}, {} as any)
+  expect(opened).toEqual(["http://localhost:9999/?token=secret"])
+  expect(JSON.parse(out as string)).toEqual({ url: "http://localhost:9999/?token=secret" })
+})
+
+test("open_companion omits the token query when no token is configured", async () => {
+  const opened: string[] = []
+  const tool = createOpenCompanionTool({
+    url: "http://localhost:9999",
+    openBrowser: (url) => {
+      opened.push(url)
+    },
+  })
+  await tool.execute({}, {} as any)
+  expect(opened).toEqual(["http://localhost:9999"])
 })
